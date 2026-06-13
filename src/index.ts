@@ -19,6 +19,14 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
   type Entry = { watch: PrWatch; timer: ReturnType<typeof setInterval> }
   const watches = new Map<string, Entry>() // key: `${sessionID} ${owner/repo#n}`
 
+  // Latest model per session, captured from user messages and replayed on report
+  // deliveries so a long-lived watch keeps using the model the user is working
+  // with rather than whatever the server re-resolves at delivery time (which can
+  // drift onto a since-removed model). Intentionally never pruned: a session can
+  // own several monitors so per-monitor cleanup by session key is unsafe, and
+  // entries are tiny — unbounded growth is a non-issue in practice.
+  const sessionModels = new Map<string, { providerID: string; modelID: string }>()
+
   // Plugin reloads can re-instantiate this plugin without finalizing the
   // previous instance, leaving its setInterval timers polling as invisible
   // zombies that deliver duplicate reports (observed live). Each instance
@@ -54,9 +62,10 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
   // promptAsync resolves { data, error } and NEVER rejects on server errors,
   // so delivery failure must be detected via the error field explicitly.
   const deliver = (sessionID: string, agent: string) => async (report: string): Promise<void> => {
+    const model = sessionModels.get(sessionID)
     const result = await client.session.promptAsync({
       path: { id: sessionID },
-      body: { agent, parts: [{ type: "text", text: report }] },
+      body: { agent, model, parts: [{ type: "text", text: report }] },
     })
     if (result.error !== undefined) {
       throw new Error(`prompt_async rejected: ${JSON.stringify(result.error)}`)
@@ -176,6 +185,11 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
           }
         },
       }),
+    },
+
+    "chat.message": async (input) => {
+      if (input.model === undefined) return
+      sessionModels.set(input.sessionID, input.model)
     },
 
     event: async ({ event }) => {

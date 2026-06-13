@@ -33,7 +33,7 @@ Add the plugin to your project's `opencode.json` (committed — the whole team g
 
 ```jsonc
 {
-  "plugin": ["github:sesori-ai/opencode-pr-monitor#v0.1.0"]
+  "plugin": ["github:sesori-ai/opencode-pr-monitor#v0.1.1"]
 }
 ```
 
