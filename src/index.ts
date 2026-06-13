@@ -40,7 +40,7 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
   takeovers.set(directory, () => {
     for (const entry of [...watches.values()]) {
       entry.watch.stopWithNotice(
-        "monitor stopped: the pr-monitor plugin was reloaded. Re-start monitoring if still needed.",
+        "Monitor stopped: the pr-monitor plugin was reloaded. Re-start monitoring if still needed.",
       )
     }
   })
@@ -143,8 +143,9 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
           "Monitor a GitHub PR in the background. Detects CI suite conclusions, new reviews, new inline/issue comments, " +
           "mergeability changes, and merge/close. Changes are aggregated (rolling debounce) and delivered to THIS session " +
           "as a '[PR Monitor]' message stating facts only. Actions: start (begin watching a PR), stop (end watching), " +
-          "flush (immediately return a full status report and reset the 'new since' baseline — do this after handling a " +
-          "report), status (list this session's monitors). The pr argument must be explicit 'owner/repo#123' or a full " +
+          "flush (on-demand: immediately return a full status report and reset the 'new since' baseline; a delivered " +
+          "report already advances the baseline, so a flush after handling one is not needed), status (list this " +
+          "session's monitors). The pr argument must be explicit 'owner/repo#123' or a full " +
           "PR URL; 'all' is allowed for stop/flush. Tuning lives in .opencode/pr-monitor.json. Monitors are per-session " +
           "and do not survive opencode restarts.",
         args: {

@@ -61,12 +61,14 @@ export function buildReport(
   const newIssue = newSince(snapshot.issueComments, opts.baselineMs)
   const newPart = (fresh: CommentMeta[]): string =>
     fresh.length > 0 ? `${fresh.length} new since last flush: ${authorBreakdown(fresh)}` : "0 new since last flush"
-  return [
-    `[PR Monitor] ${targetKey(target)} — "${title}"${stateSuffix} (${snapshot.url})`,
+  const lines = [
+    `[PR Monitor] [${targetKey(target)}](${snapshot.url}) — "${title}"${stateSuffix}`,
     ciLine(snapshot, opts.forcedHoldMinutes),
     `- Mergeable: ${snapshot.mergeable}`,
     reviewLine(snapshot),
     `- [comment:inline] ${snapshot.unresolvedThreads} unresolved threads (${newPart(newInline)})`,
     `- [comment:issue] ${snapshot.issueCommentsTotal} total (${newPart(newIssue)})`,
-  ].join("\n")
+  ]
+  if (snapshot.state !== "OPEN") lines.push(`- Monitor stopped: PR ${snapshot.state === "MERGED" ? "merged" : "closed"}`)
+  return lines.join("\n")
 }

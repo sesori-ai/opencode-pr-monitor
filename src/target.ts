@@ -22,3 +22,7 @@ export function parseTarget(input: string): Target | { error: string } {
 export function targetKey(target: Target): string {
   return `${target.owner}/${target.repo}#${target.number}`
 }
+
+export function targetUrl(target: Target): string {
+  return `https://github.com/${target.owner}/${target.repo}/pull/${target.number}`
+}

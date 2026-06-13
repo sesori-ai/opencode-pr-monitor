@@ -14,7 +14,7 @@ An [opencode](https://opencode.ai) plugin that watches GitHub pull requests in t
 ### Example report
 
 ```
-[PR Monitor] sesori-ai/example#42 — "feat: add relay reconnect backoff" (https://github.com/sesori-ai/example/pull/42)
+[PR Monitor] [sesori-ai/example#42](https://github.com/sesori-ai/example/pull/42) — "feat: add relay reconnect backoff"
 - CI: failing (1/8 failed: analyze)
 - Mergeable: MERGEABLE
 - Reviews: alice ✓ approved · bob ⏳ pending
@@ -33,7 +33,7 @@ Add the plugin to your project's `opencode.json` (committed — the whole team g
 
 ```jsonc
 {
-  "plugin": ["github:sesori-ai/opencode-pr-monitor#v0.1.1"]
+  "plugin": ["github:sesori-ai/opencode-pr-monitor#v0.1.2"]
 }
 ```
 
@@ -47,7 +47,7 @@ The plugin registers a single `pr_monitor` tool:
 | -------- | -------------------------------------- | ------ |
 | `start`  | `owner/repo#123` or full PR URL        | Begin watching. The repo must be explicit — no cwd inference. |
 | `stop`   | PR identifier or `all`                 | Stop watching. |
-| `flush`  | PR identifier or `all`                 | Immediately return a full status report and reset the "new since" baseline. |
+| `flush`  | PR identifier or `all`                 | On demand: immediately return a full status report and reset the "new since" baseline. Delivered reports already advance the baseline, so a flush after handling one isn't needed. |
 | `status` | —                                      | List this session's active monitors. |
 
 Reports arrive in the owning session as messages starting with `[PR Monitor]`.
@@ -77,7 +77,7 @@ Optional, per project: `.opencode/pr-monitor.json` (looked up in the project dir
 - **Activity** = state/mergeability changes, review changes, unresolved-thread count changes, new comments, and CI *suite conclusions*. Transitions into "running" (a new push) and per-check progress are intentionally not activity.
 - **"New since last flush"** counts comments created after the watch's baseline, which advances on every delivered report or manual `flush`.
 - **Failure handling**: 10 consecutive poll failures (or report-delivery failures) stop the monitor with a notice. A deleted/inaccessible PR stops it immediately.
-- **Terminal states**: a report describing a merged/closed PR is delivered, then the monitor stops itself.
+- **Terminal states**: a report describing a merged/closed PR is delivered with a `Monitor stopped: PR merged|closed` line, then the monitor stops itself. All stop reasons (merge/close, PR deleted, repeated poll failures, plugin reload) use the same `Monitor stopped: <reason>` phrasing.
 
 ## Development
 

@@ -8,7 +8,7 @@ import { detectActivity } from "./activity"
 import type { MonitorConfig } from "./config"
 import { ciPhase, PollError, type PrSnapshot } from "./github"
 import { buildReport } from "./report"
-import { targetKey, type Target } from "./target"
+import { targetKey, targetUrl, type Target } from "./target"
 
 export type WatchDeps = {
   now: () => number
@@ -117,21 +117,21 @@ export class PrWatch {
 
   stopWithNotice(reason: string): void {
     if (this.stopped) return
-    this.deliverOrLog(`[PR Monitor] ${targetKey(this.target)} — ${reason}`)
+    this.deliverOrLog(`[PR Monitor] [${targetKey(this.target)}](${targetUrl(this.target)}) — ${reason}`)
     this.stop()
   }
 
   private handlePollFailure(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
     if (error instanceof PollError && error.notFound) {
-      this.deliverOrLog(`[PR Monitor] ${targetKey(this.target)} — monitor stopped: PR not found (deleted or inaccessible). Last error: ${message}`)
+      this.deliverOrLog(`[PR Monitor] [${targetKey(this.target)}](${targetUrl(this.target)}) — Monitor stopped: PR not found (deleted or inaccessible). Last error: ${message}`)
       this.stop()
       return
     }
     this.consecutiveFailures += 1
     this.deps.log(`poll failed for ${targetKey(this.target)} (${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${message}`)
     if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      this.deliverOrLog(`[PR Monitor] ${targetKey(this.target)} — monitor stopped: ${MAX_CONSECUTIVE_FAILURES} consecutive poll failures. Last error: ${message}`)
+      this.deliverOrLog(`[PR Monitor] [${targetKey(this.target)}](${targetUrl(this.target)}) — Monitor stopped: ${MAX_CONSECUTIVE_FAILURES} consecutive poll failures. Last error: ${message}`)
       this.stop()
     }
   }
