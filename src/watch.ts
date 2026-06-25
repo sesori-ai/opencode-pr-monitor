@@ -90,6 +90,21 @@ export class PrWatch {
     }
   }
 
+  /**
+   * Initial status delivered right after the watch starts, so the owning
+   * session sees where it is starting from and can address anything already
+   * outstanding on the PR. Reports against a zero baseline so every existing
+   * comment counts as "new", then advances the baseline to the initial
+   * snapshot so periodic flushes only surface genuinely newer activity.
+   * Fire-and-forget: a failure here is logged, not fatal to the watch.
+   */
+  announceInitial(): void {
+    if (this.stopped || this.snapshot === undefined) return
+    const report = buildReport(this.target, this.snapshot, { baselineMs: 0 })
+    this.lastFlushAt = this.snapshotAt ?? this.startedAt
+    this.deliverOrLog(report)
+  }
+
   /** Manual flush: always re-fetches and always returns a full report. */
   async manualFlush(): Promise<string> {
     try {

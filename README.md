@@ -61,7 +61,8 @@ Optional, per project: `.opencode/pr-monitor.json` (looked up in the project dir
   "debounceMinutes": 5,
   "maxCiWaitMinutes": 30,
   "pollIntervalSeconds": 60,
-  "ignoreCommentTag": "<!-- pr-monitor:ignore -->"
+  "ignoreCommentTag": "<!-- pr-monitor:ignore -->",
+  "announceOnStart": true
 }
 ```
 
@@ -71,6 +72,7 @@ Optional, per project: `.opencode/pr-monitor.json` (looked up in the project dir
 | `maxCiWaitMinutes`    | `30`    | Upper bound on holding a due report while CI is still running. After this, the report is force-flushed naming unfinished checks. |
 | `pollIntervalSeconds` | `60`    | GitHub poll interval per watched PR (minimum 30). |
 | `ignoreCommentTag`    | unset   | If set, comments authored by the authenticated `gh` user that contain this tag are invisible to the monitor — useful so an agent replying to review threads doesn't trigger its own reports. |
+| `announceOnStart`     | `true`  | Deliver a full status report immediately when a monitor starts, so the session sees its starting point and can address anything already outstanding on the PR. Set `false` to disable. |
 
 ## Behavior details
 

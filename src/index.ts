@@ -127,9 +127,15 @@ export const PrMonitorPlugin: Plugin = async ({ client, directory, worktree, $ }
     })
     const timer = setInterval(() => void watch.tick(), config.pollIntervalSeconds * 1000)
     watches.set(key, { watch, timer })
+    // Announce the current state immediately so the session knows its starting
+    // point and can address anything already outstanding on the PR (comments
+    // added before — or during — startup that periodic polling would otherwise
+    // treat as pre-existing and never report). Toggleable via announceOnStart.
+    if (config.announceOnStart) watch.announceInitial()
     log(`started monitoring ${targetKey(target)} for session ${sessionID}`)
     return (
       `Started monitoring ${targetKey(target)} — "${initial.title}".\n` +
+      (config.announceOnStart ? `An initial [PR Monitor] status report is being delivered to this session now. ` : "") +
       `Polling every ${config.pollIntervalSeconds}s; reports arrive in this session as [PR Monitor] messages after ` +
       `${config.debounceMinutes} quiet minutes following detected activity. The monitor stops automatically when the PR ` +
       `is merged or closed, and does not survive an opencode restart.`

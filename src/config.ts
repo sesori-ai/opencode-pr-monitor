@@ -9,6 +9,7 @@ export type MonitorConfig = {
   maxCiWaitMinutes: number
   pollIntervalSeconds: number
   ignoreCommentTag: string | undefined
+  announceOnStart: boolean
 }
 
 const CONFIG_FILE = "pr-monitor.json"
@@ -18,6 +19,7 @@ const DEFAULT_CONFIG: MonitorConfig = {
   maxCiWaitMinutes: 30,
   pollIntervalSeconds: 60,
   ignoreCommentTag: undefined,
+  announceOnStart: true,
 }
 
 const MIN_POLL_INTERVAL_SECONDS = 30
@@ -36,6 +38,8 @@ function resolveConfig(raw: unknown): MonitorConfig {
   cfg.pollIntervalSeconds = Math.max(poll, MIN_POLL_INTERVAL_SECONDS)
   const tag = record["ignoreCommentTag"]
   cfg.ignoreCommentTag = typeof tag === "string" && tag.length > 0 ? tag : undefined
+  const announce = record["announceOnStart"]
+  if (typeof announce === "boolean") cfg.announceOnStart = announce
   return cfg
 }
 
