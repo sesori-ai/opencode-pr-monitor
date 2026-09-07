@@ -33,6 +33,15 @@ def register(ctx):
     schema = json.loads((Path(__file__).parent / "dist" / "tool.json").read_text())
     bridges = {}
     lock = threading.RLock()
+    closed = False
+    generation = 0
+    finalized = {}
+    finalizing = {}
+
+    def native_identity(cli):
+        # CLI can resume a durable session in a new agent without emitting a
+        # session-start hook. Do not retain whole retired agents in this map.
+        return None if cli is None else (id(cli), id(getattr(cli, "agent", cli)))
 
     def capture(session_id):
         from gateway.session_context import get_session_env
@@ -63,8 +72,16 @@ def register(ctx):
             from agent.delegation_context import is_delegated_child_context
             if is_delegated_child_context():
                 raise RuntimeError("Start PR Monitor in the owning conversation, not a delegated child")
+            with lock:
+                admitted_generation = generation
             key, route, cwd = capture(session_id)
             with lock:
+                if closed:
+                    raise RuntimeError("PR Monitor plugin was unloaded")
+                retired_native = (key[0] == "native" and session_id in finalized
+                                  and finalized[session_id] == native_identity(route.cli))
+                if session_id in finalizing or retired_native or admitted_generation != generation or not route.alive():
+                    raise RuntimeError("Hermes conversation changed during monitor admission; retry in a live conversation")
                 bridge = bridges.get(key)
                 if bridge is not None and (bridge._closed or not bridge.route.alive()):
                     bridge.close()
@@ -81,15 +98,31 @@ def register(ctx):
         except Exception as exc:
             return json.dumps({"error": str(exc)})
 
-    def finalize(session_id="", **_):
+    def finalize(session_id="", old_session_id=None, **_):
+        nonlocal generation
+        # Gateway reset names the replacement in session_id, unlike CLI/TUI.
+        retired_id = old_session_id or session_id
         with lock:
-            doomed = [key for key, bridge in bridges.items() if bridge.route.owns(session_id) or not bridge.route.alive()]
+            generation += 1
+            finalizing[retired_id] = finalizing.get(retired_id, 0) + 1
+            if retired_id:
+                finalized[retired_id] = native_identity(getattr(ctx._manager, "_cli_ref", None))
+            doomed = [key for key, bridge in bridges.items() if bridge.route.owns(retired_id) or not bridge.route.alive()]
             stopped = [bridges.pop(key) for key in doomed]
-        for bridge in stopped:
-            bridge.close()
+        try:
+            for bridge in stopped:
+                bridge.close()
+        finally:
+            with lock:
+                finalizing[retired_id] -= 1
+                if not finalizing[retired_id]:
+                    del finalizing[retired_id]
 
     def close_all():
+        nonlocal closed, generation
         with lock:
+            closed = True
+            generation += 1
             stopped = list(bridges.values())
             bridges.clear()
         for bridge in stopped:

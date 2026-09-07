@@ -38,7 +38,7 @@ other clients without that screen require a terminal on the app-server host.
 After approval, a new prompt or tool event registers the conversation; retry
 then. Changed hooks may need review after updates. Do not repeatedly retry
 without a setup change, manufacture registration files, or bypass hook trust.
-See the repository README's required hook-trust setup steps. If the user has
+See the [required hook-trust setup steps](https://github.com/sesori-ai/pr-monitor-plugin#trust-the-delivery-hooks-required). If the user has
 already approved these exact hooks, help complete that review without asking
 for the same permission again.
 

@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Missing-registration errors and the Claude Code/Codex monitor skill explain the separate hook-trust step and
   how to recover in the same host configuration without repeatedly retrying or creating registration by hand.
 
+### Fixed
+
+- Hermes teardown rejects late worker admission and drains already admitted report delivery; busy Desktop delivery
+  rechecks conversation ownership before redirecting. Host-confirmed resumes can restart finalized conversations.
+- Hermes builds remove stale generated artifacts, release output names the Hermes manifest, and worker tests retain
+  normal unittest assertion reporting. The Codex workflow links directly to the hook-trust setup instructions.
+
 ## [0.4.1]
 
 ### Changed

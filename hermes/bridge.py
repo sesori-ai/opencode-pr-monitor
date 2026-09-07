@@ -17,6 +17,9 @@ class Bridge:
         self.route = route
         self.cwd = cwd
         self._context = contextvars.copy_context()
+        # Admission and shutdown share a gate. A delivery already inside the
+        # host API drains before close returns; queued deliveries are rejected.
+        self._delivery_lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._lock = threading.Lock()
         self._pending = {}
@@ -62,9 +65,10 @@ class Bridge:
 
     def _deliver(self, message):
         try:
-            if self._closed:
-                return
-            self._context.copy().run(self.route.deliver, message["report"])
+            with self._delivery_lock:
+                if self._closed:
+                    return
+                self._context.copy().run(self.route.deliver, message["report"])
             response = {"type": "ack", "id": message["id"], "ok": True}
         except Exception as exc:
             response = {"type": "ack", "id": message["id"], "ok": False, "error": str(exc)}
@@ -104,11 +108,12 @@ class Bridge:
                 log.warning("%s", line.rstrip())
 
     def close(self):
-        close_route = getattr(self.route, "close", None)
-        if close_route is not None:
-            close_route()
+        self._closed = True
+        with self._delivery_lock:
+            close_route = getattr(self.route, "close", None)
+            if close_route is not None:
+                close_route()
         with self._write_lock:
-            self._closed = True
             try:
                 self._process.stdin.close()
             except OSError:

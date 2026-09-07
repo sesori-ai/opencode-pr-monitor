@@ -1,8 +1,12 @@
-import { mkdir, copyFile, writeFile } from "node:fs/promises"
+import { mkdir, copyFile, writeFile, rm } from "node:fs/promises"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { build } from "esbuild"
 const root = new URL("../hermes/", import.meta.url)
+// These committed directories contain only generated plugin artifacts.
+for (const path of ["dist/", "skills/"]) {
+  await rm(new URL(path, root), { recursive: true, force: true })
+}
 await mkdir(new URL("dist/", root), { recursive: true })
 const output = fileURLToPath(new URL("dist/worker.mjs", root))
 await build({ entryPoints: [fileURLToPath(new URL("src/worker.ts", root))], outfile: output,

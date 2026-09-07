@@ -78,6 +78,21 @@ class DesktopTests(unittest.TestCase):
             route.deliver("cancelled")
         self.assertFalse(self.messages)
 
+    def test_busy_delivery_rechecks_a_conversation_closed_during_transport_binding(self):
+        self.record["running"] = True
+        route = DesktopRoute.capture("stored-a", "ui-a")
+        transport = sys.modules["tui_gateway.transport"]
+        def close_before_admission(value):
+            with self.server._sessions_lock:
+                self.record["_closing"] = True
+            return self.bound.set(value)
+        with patch.object(transport, "bind_transport", close_before_admission):
+            with self.assertRaisesRegex(RuntimeError, "closed or was replaced"):
+                route.deliver("must not redirect")
+        self.assertFalse(self.messages)
+        self.assertTrue(self.record["running"])
+        self.assertIsNone(self.bound.get())
+
     def test_foreign_subagent_and_reused_runtime_id_are_refused(self):
         with self.assertRaisesRegex(RuntimeError, "ownership"):
             DesktopRoute.capture("stored-b", "ui-a")
@@ -160,6 +175,141 @@ class RegistrationTests(unittest.TestCase):
             self.assertIn("delegated child", calls["handler"]({"action": "start"}, session_id="a"))
 
 
+class LifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.calls, self.hooks, self.unload, self.workers = {}, {}, [], []
+        self.cli = types.SimpleNamespace(session_id="a")
+        self.ctx = types.SimpleNamespace(
+            _manager=types.SimpleNamespace(_cli_ref=self.cli),
+            register_tool=lambda **kw: self.calls.update(kw),
+            register_hook=lambda name, fn: self.hooks.update({name: fn}), on_unload=self.unload.append,
+            register_skill=lambda *a: None, register_system_prompt_section=lambda *a: None,
+        )
+        self.modules = {
+            "agent": types.ModuleType("agent"), "gateway": types.ModuleType("gateway"),
+            "agent.delegation_context": types.SimpleNamespace(is_delegated_child_context=lambda: False),
+            "agent.runtime_cwd": types.SimpleNamespace(resolve_agent_cwd=lambda: ROOT),
+            "gateway.session_context": types.SimpleNamespace(get_session_env=lambda _: ""),
+        }
+        modules = patch.dict(sys.modules, self.modules)
+        modules.start()
+        self.addCleanup(modules.stop)
+        case = self
+        class FakeBridge:
+            def __init__(self, cwd, route):
+                self.route, self._closed = route, False
+                self.on_close = lambda: None
+                case.workers.append(self)
+            def call(self, args, **_):
+                if self._closed:
+                    raise RuntimeError("stopped")
+                return "started"
+            def close(self):
+                self._closed = True
+                self.on_close()
+        bridges = patch("hermes.Bridge", FakeBridge)
+        bridges.start()
+        self.addCleanup(bridges.stop)
+        register(self.ctx)
+        self.addCleanup(lambda: [fn() for fn in reversed(self.unload)])
+
+    def start(self, sid="a"):
+        return self.calls["handler"]({"action": "start", "pr": "example/repo#1"}, session_id=sid)
+
+    def test_finalize_and_unload_reject_late_admission_before_workers_finish_closing(self):
+        self.assertEqual(self.start(), "started")
+        late = []
+        self.workers[0].on_close = lambda: late.append(self.start())
+        self.hooks["on_session_finalize"](session_id="a")
+        self.assertIn("conversation changed", late.pop())
+        self.assertEqual(len(self.workers), 1)
+        self.assertIn("conversation changed", self.start())
+        self.cli.agent = object()
+        self.assertEqual(self.start(), "started")
+        self.workers[-1].on_close = lambda: late.append(self.start())
+        self.unload[0]()
+        self.assertIn("unloaded", late.pop())
+        self.assertIn("unloaded", self.start())
+        self.assertEqual(len(self.workers), 2)
+
+    def test_capture_racing_finalize_cannot_create_a_worker(self):
+        def finalize_during_capture(*_):
+            self.hooks["on_session_finalize"](session_id="a")
+            # Even a subsequent real resume cannot revive this old admission.
+            self.cli.agent = object()
+            return None
+        with patch("hermes.DesktopRoute.capture", finalize_during_capture):
+            self.assertIn("conversation changed", self.start())
+        self.assertFalse(self.workers)
+        self.assertEqual(self.start(), "started")
+
+    def test_cli_resume_with_new_agent_accepts_same_durable_identity(self):
+        self.cli.agent = object()
+        self.assertEqual(self.start(), "started")
+        self.hooks["on_session_finalize"](session_id="a")
+        self.assertIn("conversation changed", self.start())
+        self.cli.agent = object()
+        self.assertEqual(self.start(), "started")
+
+    def test_resume_waits_until_previous_workers_finish_closing(self):
+        self.assertEqual(self.start(), "started")
+        late = []
+        def resume_during_close():
+            self.cli.agent = object()
+            late.append(self.start())
+        self.workers[0].on_close = resume_during_close
+        self.hooks["on_session_finalize"](session_id="a")
+        self.assertIn("conversation changed", late.pop())
+        self.assertEqual(len(self.workers), 1)
+        self.assertEqual(self.start(), "started")
+
+    def test_gateway_reset_retires_old_identity_not_replacement(self):
+        self.assertEqual(self.start(), "started")
+        self.cli.session_id = "b"
+        self.hooks["on_session_reset"](session_id="b", old_session_id="a", new_session_id="b")
+        self.assertTrue(self.workers[0]._closed)
+        self.assertEqual(self.start("b"), "started")
+
+
+class DeliveryShutdownTests(unittest.TestCase):
+    def test_close_drains_admitted_delivery_and_rejects_late_reports(self):
+        entered, release, closing, closed = (threading.Event() for _ in range(4))
+        events = []
+        def deliver(report):
+            entered.set()
+            if not release.wait(3):
+                raise RuntimeError("test did not release host delivery")
+            events.append(report)
+        bridge = Bridge.__new__(Bridge)
+        bridge.route = types.SimpleNamespace(deliver=deliver, close=lambda: events.append("route closed"))
+        bridge._context = contextvars.copy_context()
+        bridge._delivery_lock = threading.RLock()
+        bridge._write_lock = threading.Lock()
+        bridge._closed = False
+        bridge._process = types.SimpleNamespace(stdin=types.SimpleNamespace(close=lambda: None), wait=lambda **_: None)
+        bridge._send = lambda _: None
+        delivery = threading.Thread(target=bridge._deliver, args=({"id": 1, "report": "accepted"},), daemon=True)
+        def close():
+            closing.set()
+            bridge.close()
+            closed.set()
+        closer = threading.Thread(target=close, daemon=True)
+        delivery.start()
+        try:
+            self.assertTrue(entered.wait(3))
+            closer.start()
+            self.assertTrue(closing.wait(3))
+            self.assertFalse(closed.wait(0.1), "close returned while delivery could still reach the host")
+        finally:
+            release.set()
+            delivery.join(3)
+            if closer.ident is not None:
+                closer.join(3)
+        self.assertTrue(closed.is_set())
+        bridge._deliver({"id": 2, "report": "too late"})
+        self.assertEqual(events, ["accepted", "route closed"])
+
+
 @unittest.skipIf(os.name == "nt", "fake gh uses a POSIX shebang; Python route contracts still run on Windows")
 class WorkerTests(unittest.TestCase):
     def setUp(self):
@@ -167,7 +317,7 @@ class WorkerTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.reports = queue.Queue()
-        self.fail = False
+        self.fail_delivery = False
         self.profile = contextvars.ContextVar("test_profile", default="wrong-profile")
         self.profile.set("profile-a")
         self.seen_profiles = []
@@ -199,8 +349,8 @@ class WorkerTests(unittest.TestCase):
     def deliver(self, report):
         self.seen_profiles.append(self.profile.get())
         self.reports.put(report)
-        if self.fail:
-            self.fail = False
+        if self.fail_delivery:
+            self.fail_delivery = False
             raise RuntimeError("temporary delivery failure")
 
     def test_start_merge_and_terminal_stop_use_bundled_shared_runtime(self):
@@ -218,7 +368,7 @@ class WorkerTests(unittest.TestCase):
 
     def test_failed_announcement_retries_and_config_is_session_scoped(self):
         (self.root / ".pr-monitor.json").write_text(json.dumps({"ignoreCommentTag": "[local]"}))
-        self.fail = True
+        self.fail_delivery = True
         result = self.bridge.call({"action": "start", "pr": "example/repo#1"})
         self.assertIn("[local]", result)
         first = self.reports.get(timeout=5)

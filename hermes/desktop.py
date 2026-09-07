@@ -78,10 +78,13 @@ class DesktopRoute:
                 # steer during tool execution. Never hold history_lock around
                 # provider cancellation, and never await the current turn: a
                 # monitor tool call in that turn could otherwise deadlock.
-                agent = self.record.get("agent")
-                if getattr(agent, "_supports_active_turn_redirect", False) is not True:
-                    raise RuntimeError("This Hermes agent cannot accept active-turn reports")
-                result = self.server._ac_try_correction(rid, self.record, agent, "redirect", report, "redirected")
+                with self.server._sessions_lock:
+                    if not self.alive():
+                        raise RuntimeError("The owning Hermes Desktop conversation closed or was replaced")
+                    agent = self.record.get("agent")
+                    if getattr(agent, "_supports_active_turn_redirect", False) is not True:
+                        raise RuntimeError("This Hermes agent cannot accept active-turn reports")
+                    result = self.server._ac_try_correction(rid, self.record, agent, "redirect", report, "redirected")
                 if result is None:
                     raise RuntimeError("Hermes is between turns; retry report delivery")
                 return

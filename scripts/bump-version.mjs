@@ -47,4 +47,4 @@ if (changelog.includes(`## [${version}]`)) {
 } else {
   await writeFile(changelogUrl, changelog.replace(/^## \[Unreleased\]\r?\n/m, `## [Unreleased]\n\n## [${version}]\n`))
 }
-console.log(`version ${version} written to ${manifests.length} manifests, mcp-server.ts, and CHANGELOG.md`)
+console.log(`version ${version} written to ${manifests.length} JSON manifests, hermes/plugin.yaml, mcp-server.ts, and CHANGELOG.md`)
