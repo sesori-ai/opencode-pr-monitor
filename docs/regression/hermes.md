@@ -24,11 +24,12 @@ No source import or fake host test satisfies an actual-host row.
 
 ## 2026-09-07 evidence
 
-- `npm test`: 73 Node test cases, including 20 Python adapter/worker cases. Fake GitHub execution is isolated
+- `npm test`: 73 Node test cases, including 22 Python adapter/worker cases. Fake GitHub execution is isolated
   to temporary test directories. Unit contracts cover idle/busy delivery, attachment preservation, profile/cwd
   isolation, a failed startup report retry, terminal cleanup, closed/reused records and worker exit. Lifecycle
   race cases also cover capture during finalization, late calls during unload/cleanup, CLI resume, gateway reset
-  identities, report draining on close, and a busy Desktop route closing before admission.
+  identities, report draining on close, and a busy Desktop route closing before admission. Unrelated finalization
+  does not cancel another conversation's admission, and cache eviction cannot revive an in-flight retired call.
 - Hermes's own `PluginManager.discover_and_load()` loaded a copied `hermes/` artifact from an isolated enabled
   profile; the tool, namespaced skill and prompt section were discovered and removed on unload. No build or
   repository dependencies were available inside the copied plugin.

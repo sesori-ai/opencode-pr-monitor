@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import atexit
+from collections import OrderedDict
 import json
 from pathlib import Path
 import threading
 
 from .bridge import Bridge
 from .desktop import DesktopRoute
+
+
+MAX_FINALIZED_IDENTITIES = 256
 
 
 class NativeRoute:
@@ -34,8 +38,10 @@ def register(ctx):
     bridges = {}
     lock = threading.RLock()
     closed = False
-    generation = 0
-    finalized = {}
+    admissions = {}
+    # Recent retired native identities reject late host callbacks. In-flight
+    # calls have independent cancellation tokens and never depend on eviction.
+    finalized = OrderedDict()
     finalizing = {}
 
     def native_identity(cli):
@@ -66,6 +72,7 @@ def register(ctx):
         return key, route, str(resolve_agent_cwd().resolve())
 
     def handle(args, session_id="", **_):
+        admission = None
         try:
             if not session_id:
                 raise RuntimeError("Hermes did not provide a conversation identity")
@@ -73,15 +80,17 @@ def register(ctx):
             if is_delegated_child_context():
                 raise RuntimeError("Start PR Monitor in the owning conversation, not a delegated child")
             with lock:
-                admitted_generation = generation
+                admission = threading.Event()
+                admissions.setdefault(session_id, set()).add(admission)
             key, route, cwd = capture(session_id)
             with lock:
                 if closed:
                     raise RuntimeError("PR Monitor plugin was unloaded")
                 retired_native = (key[0] == "native" and session_id in finalized
                                   and finalized[session_id] == native_identity(route.cli))
-                if session_id in finalizing or retired_native or admitted_generation != generation or not route.alive():
+                if session_id in finalizing or retired_native or admission.is_set() or not route.alive():
                     raise RuntimeError("Hermes conversation changed during monitor admission; retry in a live conversation")
+                finalized.pop(session_id, None)
                 bridge = bridges.get(key)
                 if bridge is not None and (bridge._closed or not bridge.route.alive()):
                     bridge.close()
@@ -97,16 +106,25 @@ def register(ctx):
             return bridge.call(args, cwd=cwd)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
+        finally:
+            if admission is not None:
+                with lock:
+                    admissions[session_id].discard(admission)
+                    if not admissions[session_id]:
+                        del admissions[session_id]
 
     def finalize(session_id="", old_session_id=None, **_):
-        nonlocal generation
         # Gateway reset names the replacement in session_id, unlike CLI/TUI.
         retired_id = old_session_id or session_id
         with lock:
-            generation += 1
+            for admission in admissions.get(retired_id, ()):
+                admission.set()
             finalizing[retired_id] = finalizing.get(retired_id, 0) + 1
             if retired_id:
                 finalized[retired_id] = native_identity(getattr(ctx._manager, "_cli_ref", None))
+                finalized.move_to_end(retired_id)
+                while len(finalized) > MAX_FINALIZED_IDENTITIES:
+                    finalized.popitem(last=False)
             doomed = [key for key, bridge in bridges.items() if bridge.route.owns(retired_id) or not bridge.route.alive()]
             stopped = [bridges.pop(key) for key in doomed]
         try:
@@ -119,10 +137,10 @@ def register(ctx):
                     del finalizing[retired_id]
 
     def close_all():
-        nonlocal closed, generation
+        nonlocal closed
         with lock:
             closed = True
-            generation += 1
+            finalized.clear()
             stopped = list(bridges.values())
             bridges.clear()
         for bridge in stopped:

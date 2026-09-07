@@ -243,6 +243,27 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(self.workers)
         self.assertEqual(self.start(), "started")
 
+    def test_unrelated_finalization_does_not_cancel_admission(self):
+        self.cli.session_id = "b"
+        def finalize_other_conversation(*_):
+            self.hooks["on_session_finalize"](session_id="a")
+            return None
+        with patch("hermes.DesktopRoute.capture", finalize_other_conversation):
+            self.assertEqual(self.start("b"), "started")
+        self.assertEqual(len(self.workers), 1)
+
+    def test_retired_identity_eviction_cannot_revive_an_inflight_admission(self):
+        def finalize_and_churn(*_):
+            self.hooks["on_session_finalize"](session_id="a")
+            for number in range(5):
+                self.hooks["on_session_finalize"](session_id=f"other-{number}")
+            return None
+        with patch("hermes.MAX_FINALIZED_IDENTITIES", 4), patch("hermes.DesktopRoute.capture", finalize_and_churn):
+            self.assertIn("conversation changed", self.start())
+        self.assertFalse(self.workers)
+        self.cli.agent = object()
+        self.assertEqual(self.start(), "started")
+
     def test_cli_resume_with_new_agent_accepts_same_durable_identity(self):
         self.cli.agent = object()
         self.assertEqual(self.start(), "started")
