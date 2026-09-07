@@ -2,7 +2,7 @@
 
 A GitHub PR monitor for coding agents, available for [OpenCode](https://opencode.ai),
 [Claude Code](https://code.claude.com), [Codex](https://developers.openai.com/codex),
-[Pi](https://github.com/earendil-works/pi), and [Oh My Pi](https://omp.sh). It watches pull requests in the background, delivers `[PR Monitor]` reports into the
+[Pi](https://github.com/earendil-works/pi), [Oh My Pi](https://omp.sh), and [Hermes](https://hermes-agent.nousresearch.com). It watches pull requests in the background, delivers `[PR Monitor]` reports into the
 session that started the watch, and manages the ready-for-human-review label from observable GitHub state.
 
 ## What it does
@@ -46,6 +46,20 @@ session that started the watch, and manages the ready-for-human-review label fro
 - For OpenCode: OpenCode >= 1.17.
 - For Pi: Pi >= 0.84.2 and Node.js >= 22.19.
 - For OMP: OMP >= 18.0.3.
+
+## Hermes
+
+Hermes Desktop/TUI, CLI and messaging gateways use a Python plugin backed by the shared Node monitoring engine:
+
+```sh
+hermes plugins install sesori-ai/pr-monitor-plugin/hermes
+hermes plugins enable pr-monitor
+```
+
+Restart the Hermes gateway/CLI after enabling the plugin. Node.js 18+ and authenticated `gh` must be available
+on the backend's PATH. Desktop reports target the original conversation, starting a turn when idle and injecting into the active turn
+when busy, including merge/close after handoff. Desktop uses a compatibility adapter for Hermes's internal gateway;
+ACP (including Hermes through Sesori) and isolated Desktop turns are not supported. See [Hermes setup and lifecycle](hermes/README.md).
 
 ## Claude Code
 
@@ -131,8 +145,40 @@ codex plugin add pr-monitor@sesori
 
 For local development, add the marketplace from a checkout instead: `codex plugin marketplace add /path/to/pr-monitor-plugin`.
 
-On the first session after installing, Codex asks you to review the plugin's hooks; press <kbd>t</kbd> (or open
-`/hooks`) to trust them. Until they are trusted, reports cannot be injected.
+### Trust the delivery hooks (required)
+
+**Installing or enabling PR Monitor does not trust its hooks.** Codex skips untrusted hooks, so monitoring cannot
+start until you review them. An enabled MCP server and visible `pr_monitor` tool do not mean delivery is ready.
+
+1. Open `codex` in a terminal on the machine running your Codex session, using the same OS user and `CODEX_HOME`
+   (the default is `~/.codex`) as your app or CLI.
+2. Run `/hooks`, review the entries from `pr-monitor@sesori`, and enable and trust all four: `SessionStart`,
+   `UserPromptSubmit`, `PostToolUse`, and `Stop`. They run the installed plugin's `hooks/drain-spool.mjs --codex`.
+   At the startup review prompt, choose **Review hooks**. Use **Trust all** only if every listed hook is one you
+   intend to approve; otherwise review the PR Monitor entries individually.
+3. Return to your original conversation, send a new prompt, and retry monitoring. A hook registers the conversation
+   automatically; there is no registration file to create by hand.
+
+**Sesori and other app-server clients:** `/hooks` is a Codex CLI screen, not a PR Monitor slash command. If your app
+has no hook-review screen, perform the steps above in a terminal on the app-server machine. For a remote bridge,
+that is the remote machine, not the phone or laptop displaying the conversation. You can close the CLI after
+reviewing the hooks; trust persists in that Codex configuration.
+
+Codex ties trust to the current hook definition. After a plugin update, new or changed hooks may need review again.
+The plugin cannot grant itself trust during installation. See [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks).
+
+If you still get **“the PR Monitor delivery hook has not registered this Codex conversation”**:
+
+- Check `/hooks` for disabled entries or entries needing review, including after updates.
+- Confirm the CLI and app-server use the same user, `CODEX_HOME`, and plugin installation.
+- Confirm hooks are enabled in Codex (`features.hooks` is not `false`) and Node.js is on the app-server's `PATH`.
+- Send a new prompt after fixing setup. If the client has not picked up the change, reopen the conversation and retry.
+
+For client implementers, make hook review part of plugin onboarding: use Codex's `hooks/list` response to show the
+plugin's enabled state and `trustStatus`, present its commands for review, and persist the user's approval through
+Codex's hook trust flow. An **installed, needs hook review** state should link to that review screen or the terminal
+steps above. Only show monitoring as ready after hooks run and the conversation registers; never auto-trust hooks
+or manufacture registration as part of installation.
 
 ### How reports arrive
 
@@ -141,6 +187,11 @@ hosts: the MCP server spools each report, plugin hooks inject it at the next `Us
 `Stop` event, and while a monitored PR lacks the ready label the `Stop` hook keeps the session on the PR by handing
 it the exact `await-activity.mjs` waiter command (run with the shell tool's `timeout_ms: 600000`). All the keep-alive
 bounds and `keepAlive` / `keepAliveMaxMinutes` / `desktopNotifications` settings apply unchanged.
+
+**Idle after handoff:** Codex's spool is routed to the correct conversation, but writing a report does not wake
+an idle conversation. Once readiness hands off the keep-alive waiter, a later merge/close report remains queued
+until that conversation's next prompt or tool/hook event. This applies to other post-handoff feedback too.
+`desktopNotifications` can announce a report out of band; it does not start an agent turn.
 
 Behavior notes for the Codex shell:
 

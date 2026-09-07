@@ -93,6 +93,16 @@ Everything under `claude-codex/` is addressed plugin-root-relative at runtime, s
 `.mcp.json` and `hooks.json` (which use `${CLAUDE_PLUGIN_ROOT}`) are unaffected by
 where the plugin root sits in the repo.
 
+## Hermes adapter
+
+`hermes/` is a Python Git plugin. `hermes/src/worker.ts` embeds `runtime/` and `core/` in the committed
+`hermes/dist/worker.mjs`; `build:hermes` also generates the tool schema and copies the canonical push-host skill.
+Python owns one worker per conversation, delivery acknowledgements, profile context, and lifecycle cleanup.
+`hermes/desktop.py` contains the experimental Desktop/TUI gateway compatibility seam; CLI/messaging gateways
+use native plugin injection. ACP is explicitly unsupported. Never import a new Desktop gateway to find a
+conversation or use foreground selection as delivery identity. Update `docs/regression/hermes.md` for host evidence.
+Hermes plugin version is part of the lockstep release check. Rebuild and commit its artifacts on shared changes.
+
 ## Core flow (both shells)
 
 1. **start** — adapter calls its session's `MonitorSession` → parse/dedupe → load config/auth → fetch initial snapshot → reject if not `OPEN` → `new PrWatch(...)` → arm the owned interval.

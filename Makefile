@@ -87,6 +87,7 @@ _bump:
 	@node scripts/bump-version.mjs $(VERSION)
 	@npm install --package-lock-only --ignore-scripts --no-audit --no-fund --silent
 	@npm run --silent build:claude
+	@npm run --silent build:hermes
 	@npm run --silent version:check
 	@grep -q '^## \[$(VERSION)\]' CHANGELOG.md || $(call fail,CHANGELOG.md has no [$(VERSION)] section)
 	@if [ -n "$$(git status --porcelain)" ]; then \
@@ -102,7 +103,7 @@ check:
 	@if [ -n "$(OPENCODE_CLI)" ]; then OPENCODE_CLI="$(OPENCODE_CLI)" npm run --silent host:check:opencode; \
 	  else printf '  $(D)opencode not on PATH; skipping current OpenCode host check$(N)\n'; fi
 	@OMP_VERSION=$(OMP_VERSION) npm run --silent host:check:omp
-	@git diff --exit-code --quiet -- claude-codex/dist/mcp-server.mjs || $(call fail,committed Claude bundle is stale)
+	@git diff --exit-code --quiet -- claude-codex/dist/mcp-server.mjs hermes/dist hermes/skills || $(call fail,committed plugin artifacts are stale)
 	@$(call ok,all checks passed)
 
 ## The release commit reaches origin before anything immutable is published.

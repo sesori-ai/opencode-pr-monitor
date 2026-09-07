@@ -141,6 +141,16 @@ codex plugin add pr-monitor@sesori
   no placeholders in args/env, so the bundle must stay executable and self-locating.
 - The Codex hook manifest is generated from the Claude manifest with `--codex` and a SessionStart registration
   hook. Both hosts execute the same hook/waiter implementation. Rebuild it with `npm run build:claude`.
+- Installation and hook trust are separate acceptance steps: an enabled plugin with four untrusted hooks must
+  remain unregistered and refuse monitor startup. `/hooks` must expose `SessionStart`, `UserPromptSubmit`,
+  `PostToolUse`, and `Stop` for explicit review; changed hook definitions require fresh approval.
+- Setup guidance must cover clients without a hook-review UI: use Codex CLI on the same host, with the same OS user,
+  `CODEX_HOME`, and plugin installation, then return to the original conversation and trigger a hook event.
+  Do not prepopulate registration files or bypass hook trust to satisfy this check.
+- Live Codex 0.153.4 app-server verification on macOS (2026-09-07): `hooks/list` showed all four PR Monitor hooks
+  enabled but untrusted. Reviewing them in Codex CLI attached to the same app-server persisted trust; a subsequent
+  tool event in the existing Sesori conversation created its registration, and `pr_monitor(status)` succeeded.
+  This verifies trust recovery and registration, not PR report delivery or the idle Stop/waiter loop.
 - Host floor: codex-cli 0.153.0 (plugins, hooks stable). Verified there: install from a local marketplace, MCP server
   spawn with the plugin-root cwd and verbatim args, hook trust prompt, and `UserPromptSubmit`/`SessionStart` hook
   firing with `${CLAUDE_PLUGIN_ROOT}` expanded. A model-driven Codex 0.153.4 `exec` smoke test additionally verified
@@ -245,3 +255,11 @@ license, a stale Claude bundle, a missing peer, and an npm publish failure befor
 `claude-codex/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `claude-codex/.mcp.json`,
 `scripts/build-*.mjs`, `scripts/check-pack.mjs`, `scripts/check-versions.mjs`, `scripts/check-*-loader.mjs`,
 `skills/monitor-pr/SKILL.md`, `opencode/index.ts`, `pi/index.ts`, `pi/omp.ts`, and `AGENTS.md`.
+
+## Hermes Git plugin
+
+Install `sesori-ai/pr-monitor-plugin/hermes` with the Hermes plugin installer. The subdirectory contains its own
+`plugin.yaml`, Python entry/bridge/Desktop adapter, committed `dist/worker.mjs` and `dist/tool.json`, and the
+canonical `skills/monitor-pr/SKILL.md` copy. It requires Node.js and authenticated gh on the backend, but no npm
+installation or build at install time. Version metadata participates in `version:check` and `bump-version.mjs`.
+See [Hermes acceptance matrix](hermes.md) for host boundaries and current coverage.

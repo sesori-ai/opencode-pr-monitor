@@ -10,5 +10,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["core", "runtime", "opencode", "pi", "claude-codex/src", "test"]
+  "include": ["core", "runtime", "opencode", "pi", "claude-codex/src", "hermes/src", "test"]
 }

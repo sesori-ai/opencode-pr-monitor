@@ -33281,7 +33281,7 @@ var adapterFor = (meta3) => {
   } catch {
   }
   if (typeof projectDir !== "string" || !isAbsolute(projectDir)) {
-    throw new Error("Cannot start monitoring: the PR Monitor delivery hook has not registered this Codex conversation in the current host. Enable and trust the plugin hooks (/hooks in the CLI), then send a new prompt and retry. No monitor was started; reports cannot be delivered until hooks run.");
+    throw new Error("Cannot start monitoring: the PR Monitor delivery hook has not registered this Codex conversation in the current host. Installing the plugin does not grant hook trust. Open Codex CLI on the host running this session (same OS user and CODEX_HOME), run /hooks, and enable/trust PR Monitor's SessionStart, UserPromptSubmit, PostToolUse, and Stop hooks. In Sesori or another client without /hooks, use a terminal on that host. Then send a new prompt here and retry. Updated hooks may need review again. Setup: https://github.com/sesori-ai/pr-monitor-plugin#trust-the-delivery-hooks-required\nNo monitor was started; reports cannot be delivered until hooks run.");
   }
   const adapter = createAdapter({ sessionId, projectDir });
   adapters.set(sessionId, adapter);

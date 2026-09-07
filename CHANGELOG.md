@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Hermes Git plugin backed by the shared monitoring runtime, with Desktop/TUI conversation delivery, native
+  CLI/messaging-gateway injection, acknowledged report failures, lifecycle cleanup, and packaged adapter tests.
+  Desktop uses a guarded gateway compatibility adapter; ACP and isolated Desktop turns remain unsupported.
+
+### Changed
+
+- Document Codex's post-handoff idle-delivery limitation: merged/closed reports remain in the owning conversation's
+  spool until another prompt or hook event.
+- Codex setup now explicitly requires review of all four delivery hooks, with terminal instructions for Sesori,
+  remote bridges, and other clients without `/hooks`, plus guidance for renewed review after plugin updates.
+- Missing-registration errors and the Claude Code/Codex monitor skill explain the separate hook-trust step and
+  how to recover in the same host configuration without repeatedly retrying or creating registration by hand.
+
 ## [0.4.1]
 
 ### Changed
