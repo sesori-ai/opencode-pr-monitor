@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hermes teardown rejects late worker admission and drains already admitted report delivery; busy Desktop delivery
   rechecks conversation ownership before redirecting. Admission cancellation is scoped to its conversation and
   retains no retired-session cache. Standalone label actions preserve active-watch configuration when present and
-  otherwise close their temporary worker after completing the action.
+  otherwise close their temporary worker after completing the action; dead or closing Desktop workers are removed
+  and rechecked before a label action can reuse them.
 - Hermes builds remove stale generated artifacts, release output names the Hermes manifest, and worker tests retain
   normal unittest assertion reporting. The Codex workflow links directly to the hook-trust setup instructions.
 

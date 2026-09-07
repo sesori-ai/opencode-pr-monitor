@@ -251,6 +251,26 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.workers), 1)
         self.assertFalse(self.workers[0]._closed)
 
+    def test_ready_action_removes_a_dead_desktop_worker_before_falling_back(self):
+        self.assertEqual(self.start(), "started")
+        self.workers[0]._closed = True
+        result = self.calls["handler"]({"action": "mark_ready", "pr": "example/repo#1"}, session_id="a")
+        self.assertEqual(result, "started")
+        self.assertEqual(len(self.workers), 2)
+        self.assertTrue(all(worker._closed for worker in self.workers))
+        self.resume()
+        self.assertEqual(self.start(), "started")
+        self.assertEqual(len(self.workers), 3)
+
+    def test_ready_action_rechecks_desktop_liveness_immediately_before_reuse(self):
+        self.assertEqual(self.start(), "started")
+        liveness = iter((True, False))
+        self.routes["a"].alive = lambda: next(liveness)
+        result = self.calls["handler"]({"action": "mark_ready", "pr": "example/repo#1"}, session_id="a")
+        self.assertEqual(result, "started")
+        self.assertEqual(len(self.workers), 2)
+        self.assertTrue(all(worker._closed for worker in self.workers))
+
     def test_native_injection_availability_does_not_enable_unsafe_monitoring(self):
         self.ctx._manager = types.SimpleNamespace(has_gateway_message_injector=True)
         self.ctx.inject_message = lambda *a, **kw: self.fail("must not inject into native queues")

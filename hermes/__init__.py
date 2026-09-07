@@ -51,12 +51,15 @@ def register(ctx):
             key = ("desktop", sid)
             bridge = bridges.get(key)
             if bridge is not None and not bridge._closed and bridge.route.owns(session_id) and bridge.route.alive():
-                return key, bridge.route, cwd
-        return ("action", object()), ActionRoute(session_id), cwd
+                return key, bridge.route, cwd, None
+            if bridge is not None and bridges.get(key) is bridge:
+                bridges.pop(key)
+        return ("action", object()), ActionRoute(session_id), cwd, bridge
 
     def handle(args, session_id="", **_):
         admission = None
         action_bridge = None
+        stale_bridges = []
         is_ready_action = args.get("action") in ("mark_ready", "unmark_ready")
         try:
             if not session_id and not is_ready_action:
@@ -67,17 +70,25 @@ def register(ctx):
             with lock:
                 admission = threading.Event()
                 admissions.setdefault(session_id, set()).add(admission)
-            key, route, cwd = capture_action(session_id) if is_ready_action else capture(session_id)
+            if is_ready_action:
+                key, route, cwd, stale = capture_action(session_id)
+                if stale is not None:
+                    stale_bridges.append(stale)
+            else:
+                key, route, cwd = capture(session_id)
             with lock:
                 if closed:
                     raise RuntimeError("PR Monitor plugin was unloaded")
                 if session_id in finalizing or admission.is_set() or (not is_ready_action and not route.alive()):
                     raise RuntimeError("Hermes conversation changed during monitor admission; retry in a live conversation")
                 bridge = bridges.get(key)
-                if bridge is not None and (bridge._closed or (not is_ready_action and not bridge.route.alive())):
-                    bridge.close()
+                if bridge is not None and (bridge._closed or not bridge.route.alive()):
                     bridges.pop(key)
+                    stale_bridges.append(bridge)
                     bridge = None
+                    if is_ready_action:
+                        key = ("action", object())
+                        route = ActionRoute(session_id)
                 if bridge is None:
                     if args.get("action") == "status":
                         return "No active PR monitors in this Hermes conversation."
@@ -87,6 +98,8 @@ def register(ctx):
                     bridges[key] = bridge
                     if key[0] == "action":
                         action_bridge = (key, bridge)
+            while stale_bridges:
+                stale_bridges.pop().close()
             return bridge.call(args, cwd=cwd)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
@@ -102,6 +115,8 @@ def register(ctx):
                         bridges.pop(key)
             if action_bridge is not None:
                 action_bridge[1].close()
+            while stale_bridges:
+                stale_bridges.pop().close()
 
     def finalize(session_id="", old_session_id=None, **_):
         # Some reset hooks identify a replacement; prefer an explicit old ID.
