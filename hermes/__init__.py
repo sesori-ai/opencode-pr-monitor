@@ -6,6 +6,7 @@ from collections import OrderedDict
 import json
 from pathlib import Path
 import threading
+import weakref
 
 from .bridge import Bridge
 from .desktop import DesktopRoute
@@ -46,8 +47,11 @@ def register(ctx):
 
     def native_identity(cli):
         # CLI can resume a durable session in a new agent without emitting a
-        # session-start hook. Do not retain whole retired agents in this map.
-        return None if cli is None else (id(cli), id(getattr(cli, "agent", cli)))
+        # session-start hook. Weak references neither retain retired agents nor
+        # confuse a replacement with a collected object's reused memory ID.
+        if cli is None:
+            return None
+        return (weakref.ref(cli), weakref.ref(getattr(cli, "agent", None) or cli))
 
     def capture(session_id):
         from gateway.session_context import get_session_env

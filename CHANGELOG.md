@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hermes teardown rejects late worker admission and drains already admitted report delivery; busy Desktop delivery
   rechecks conversation ownership before redirecting. Host-confirmed resumes can restart finalized conversations.
-  Admission cancellation is scoped to its conversation, and retired identity retention is bounded.
+  Admission cancellation is scoped to its conversation; bounded weak identity records avoid retaining old agents or
+  confusing a resumed agent with a reused object ID.
 - Hermes builds remove stale generated artifacts, release output names the Hermes manifest, and worker tests retain
   normal unittest assertion reporting. The Codex workflow links directly to the hook-trust setup instructions.
 

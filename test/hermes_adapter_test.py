@@ -12,6 +12,7 @@ import tempfile
 import threading
 import types
 import unittest
+import weakref
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -175,10 +176,14 @@ class RegistrationTests(unittest.TestCase):
             self.assertIn("delegated child", calls["handler"]({"action": "start"}, session_id="a"))
 
 
+class LiveIdentity(types.SimpleNamespace):
+    pass
+
+
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         self.calls, self.hooks, self.unload, self.workers = {}, {}, [], []
-        self.cli = types.SimpleNamespace(session_id="a")
+        self.cli = LiveIdentity(session_id="a")
         self.ctx = types.SimpleNamespace(
             _manager=types.SimpleNamespace(_cli_ref=self.cli),
             register_tool=lambda **kw: self.calls.update(kw),
@@ -224,7 +229,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("conversation changed", late.pop())
         self.assertEqual(len(self.workers), 1)
         self.assertIn("conversation changed", self.start())
-        self.cli.agent = object()
+        self.cli.agent = LiveIdentity()
         self.assertEqual(self.start(), "started")
         self.workers[-1].on_close = lambda: late.append(self.start())
         self.unload[0]()
@@ -236,7 +241,7 @@ class LifecycleTests(unittest.TestCase):
         def finalize_during_capture(*_):
             self.hooks["on_session_finalize"](session_id="a")
             # Even a subsequent real resume cannot revive this old admission.
-            self.cli.agent = object()
+            self.cli.agent = LiveIdentity()
             return None
         with patch("hermes.DesktopRoute.capture", finalize_during_capture):
             self.assertIn("conversation changed", self.start())
@@ -261,22 +266,27 @@ class LifecycleTests(unittest.TestCase):
         with patch("hermes.MAX_FINALIZED_IDENTITIES", 4), patch("hermes.DesktopRoute.capture", finalize_and_churn):
             self.assertIn("conversation changed", self.start())
         self.assertFalse(self.workers)
-        self.cli.agent = object()
+        self.cli.agent = LiveIdentity()
         self.assertEqual(self.start(), "started")
 
     def test_cli_resume_with_new_agent_accepts_same_durable_identity(self):
-        self.cli.agent = object()
-        self.assertEqual(self.start(), "started")
-        self.hooks["on_session_finalize"](session_id="a")
-        self.assertIn("conversation changed", self.start())
-        self.cli.agent = object()
-        self.assertEqual(self.start(), "started")
+        # Simulate recycled object IDs: retirement must use weak object identity.
+        with patch("hermes.id", return_value=7, create=True):
+            self.cli.agent = LiveIdentity()
+            old_agent = weakref.ref(self.cli.agent)
+            self.assertEqual(self.start(), "started")
+            self.hooks["on_session_finalize"](session_id="a")
+            self.assertIn("conversation changed", self.start())
+            self.cli.agent = None
+            self.assertIsNone(old_agent(), "retirement retained the old agent")
+            self.cli.agent = LiveIdentity()
+            self.assertEqual(self.start(), "started")
 
     def test_resume_waits_until_previous_workers_finish_closing(self):
         self.assertEqual(self.start(), "started")
         late = []
         def resume_during_close():
-            self.cli.agent = object()
+            self.cli.agent = LiveIdentity()
             late.append(self.start())
         self.workers[0].on_close = resume_during_close
         self.hooks["on_session_finalize"](session_id="a")
