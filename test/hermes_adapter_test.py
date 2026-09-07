@@ -253,10 +253,13 @@ class LifecycleTests(unittest.TestCase):
 
     def test_ready_action_removes_a_dead_desktop_worker_before_falling_back(self):
         self.assertEqual(self.start(), "started")
+        stale_closed = threading.Event()
+        self.workers[0].on_close = stale_closed.set
         self.workers[0]._closed = True
         result = self.calls["handler"]({"action": "mark_ready", "pr": "example/repo#1"}, session_id="a")
         self.assertEqual(result, "started")
         self.assertEqual(len(self.workers), 2)
+        self.assertTrue(stale_closed.is_set(), "the stale Desktop worker was not closed")
         self.assertTrue(all(worker._closed for worker in self.workers))
         self.resume()
         self.assertEqual(self.start(), "started")
