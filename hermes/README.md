@@ -7,7 +7,8 @@ hermes plugins install sesori-ai/pr-monitor-plugin/hermes
 hermes plugins enable pr-monitor
 ```
 
-Restart Hermes Desktop's gateway (or restart the CLI/gateway), and start or resume a conversation.
+Restart Hermes Desktop's gateway, and start or resume a conversation. For standalone label actions on another host,
+restart that host after enabling the plugin.
 Ensure the `pr-monitor` toolset is enabled in that profile if you use an explicit toolset allow-list.
 Node.js 18+ and an authenticated GitHub CLI must be on the **Hermes backend's** PATH. No npm install or build
 is needed: `dist/worker.mjs`, `dist/tool.json`, and the workflow skill ship with the Git plugin.
@@ -21,12 +22,13 @@ with `skill_view(name="pr-monitor:monitor-pr")`. Agents end their turn while the
 - **Desktop/TUI:** reports enter the original live conversation through its background-turn entry point. An idle conversation
   starts a turn; a busy conversation accepts a native active-turn redirect (or steer during tool execution). Switching tabs
   does not retarget delivery. User-composed attachments are preserved. Merge/close reports use the same path, even after readiness handoff.
-- **CLI:** uses the native plugin message-injection API, which queues idle input and interrupts a running turn.
-- **Messaging gateway:** uses native plugin injection to the captured session key. Hermes additionally requires
-  `plugins.entries.pr-monitor.allow_gateway_injection: true` in that profile's config. Acceptance confirms
-  scheduling, not completed model execution.
-- **ACP (including Hermes through Sesori) and Desktop `dashboard.turn_isolation: true`:** unsupported; start
-  fails with an explicit error. Desktop's default `dashboard.turn_isolation: false` is supported.
+- **CLI, messaging gateways, ACP (including Hermes through Sesori), and Desktop `dashboard.turn_isolation: true`:**
+  background monitoring is unsupported and `start` fails explicitly. Native CLI/gateway injection does not bind
+  queued reports to the original durable conversation, so switching or resetting a conversation could retarget them.
+  Desktop's default `dashboard.turn_isolation: false` is supported.
+- **Standalone labels on all hosts:** `mark_ready` and `unmark_ready` work without a background-delivery route or an
+  active monitor. A temporary worker performs the action and closes. When the owning Desktop conversation already
+  has a worker, these actions reuse it and preserve its active-watch configuration.
 
 Monitors live in one Node worker per conversation. Finalizing/resetting the conversation, unloading the plugin,
 quitting the host, or a worker failure stops its monitors. Ordinary turn completion does not stop them.

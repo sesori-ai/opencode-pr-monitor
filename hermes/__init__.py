@@ -1,37 +1,28 @@
-"""PR Monitor plugin for Hermes Desktop, CLI and messaging gateway."""
+"""Desktop/TUI PR monitoring and host-independent label actions for Hermes."""
 from __future__ import annotations
 
 import atexit
-from collections import OrderedDict
 import json
 from pathlib import Path
 import threading
-import weakref
 
 from .bridge import Bridge
 from .desktop import DesktopRoute
 
 
-MAX_FINALIZED_IDENTITIES = 256
-
-
-class NativeRoute:
-    def __init__(self, ctx, session_id, session_key, cli):
-        self.ctx, self.session_id, self.session_key, self.cli = ctx, session_id, session_key, cli
+class ActionRoute:
+    """Standalone label actions need lifecycle ownership, but no report route."""
+    def __init__(self, session_id):
+        self.session_id = session_id
 
     def owns(self, session_id):
         return self.session_id == session_id
 
     def alive(self):
-        if self.cli is not None:
-            return (getattr(self.ctx._manager, "_cli_ref", None) is self.cli
-                    and getattr(self.cli, "session_id", None) == self.session_id)
-        return (getattr(self.ctx._manager, "_cli_ref", None) is None
-                and bool(self.ctx._manager.has_gateway_message_injector))
+        return True
 
     def deliver(self, report):
-        if not self.alive() or not self.ctx.inject_message(report, session_key=self.session_key):
-            raise RuntimeError("Hermes could not accept the report for its owning conversation")
+        raise RuntimeError("A standalone label action cannot deliver monitor reports")
 
 
 def register(ctx):
@@ -40,45 +31,35 @@ def register(ctx):
     lock = threading.RLock()
     closed = False
     admissions = {}
-    # Recent retired native identities reject late host callbacks. In-flight
-    # calls have independent cancellation tokens and never depend on eviction.
-    finalized = OrderedDict()
     finalizing = {}
-
-    def native_identity(cli):
-        # CLI can resume a durable session in a new agent without emitting a
-        # session-start hook. Weak references neither retain retired agents nor
-        # confuse a replacement with a collected object's reused memory ID.
-        if cli is None:
-            return None
-        return (weakref.ref(cli), weakref.ref(getattr(cli, "agent", None) or cli))
 
     def capture(session_id):
         from gateway.session_context import get_session_env
         from agent.runtime_cwd import resolve_agent_cwd
         sid = get_session_env("HERMES_UI_SESSION_ID")
         route = DesktopRoute.capture(session_id, sid)
-        if route is not None:
+        if route is None:
+            raise RuntimeError("Background PR monitoring requires Hermes Desktop/TUI. CLI, messaging gateways and ACP do not provide conversation-bound report delivery; standalone mark_ready/unmark_ready actions remain available.")
+        return ("desktop", sid), route, str(resolve_agent_cwd().resolve())
+
+    def capture_action(session_id):
+        from agent.runtime_cwd import resolve_agent_cwd
+        from gateway.session_context import get_session_env
+        cwd = str(resolve_agent_cwd().resolve())
+        sid = get_session_env("HERMES_UI_SESSION_ID")
+        with lock:
             key = ("desktop", sid)
-        else:
-            manager = ctx._manager
-            cli = getattr(manager, "_cli_ref", None)
-            session_key = get_session_env("HERMES_SESSION_KEY")
-            if cli is not None:
-                if getattr(cli, "session_id", None) != session_id:
-                    raise RuntimeError("Cannot prove ownership of the Hermes CLI conversation")
-            elif not session_key or not manager.has_gateway_message_injector:
-                raise RuntimeError("This Hermes host cannot deliver background reports. Use Desktop, CLI, or a messaging gateway; ACP is not supported.")
-            elif not ctx._gateway_injection_allowed():
-                raise RuntimeError("Enable plugins.entries.pr-monitor.allow_gateway_injection in Hermes config before starting a monitor")
-            route = NativeRoute(ctx, session_id, session_key, cli)
-            key = ("native", session_id)
-        return key, route, str(resolve_agent_cwd().resolve())
+            bridge = bridges.get(key)
+            if bridge is not None and not bridge._closed and bridge.route.owns(session_id) and bridge.route.alive():
+                return key, bridge.route, cwd
+        return ("action", object()), ActionRoute(session_id), cwd
 
     def handle(args, session_id="", **_):
         admission = None
+        action_bridge = None
+        is_ready_action = args.get("action") in ("mark_ready", "unmark_ready")
         try:
-            if not session_id:
+            if not session_id and not is_ready_action:
                 raise RuntimeError("Hermes did not provide a conversation identity")
             from agent.delegation_context import is_delegated_child_context
             if is_delegated_child_context():
@@ -86,17 +67,14 @@ def register(ctx):
             with lock:
                 admission = threading.Event()
                 admissions.setdefault(session_id, set()).add(admission)
-            key, route, cwd = capture(session_id)
+            key, route, cwd = capture_action(session_id) if is_ready_action else capture(session_id)
             with lock:
                 if closed:
                     raise RuntimeError("PR Monitor plugin was unloaded")
-                retired_native = (key[0] == "native" and session_id in finalized
-                                  and finalized[session_id] == native_identity(route.cli))
-                if session_id in finalizing or retired_native or admission.is_set() or not route.alive():
+                if session_id in finalizing or admission.is_set() or (not is_ready_action and not route.alive()):
                     raise RuntimeError("Hermes conversation changed during monitor admission; retry in a live conversation")
-                finalized.pop(session_id, None)
                 bridge = bridges.get(key)
-                if bridge is not None and (bridge._closed or not bridge.route.alive()):
+                if bridge is not None and (bridge._closed or (not is_ready_action and not bridge.route.alive())):
                     bridge.close()
                     bridges.pop(key)
                     bridge = None
@@ -107,28 +85,31 @@ def register(ctx):
                         return "No active PR monitors in this Hermes conversation."
                     bridge = Bridge(cwd, route)
                     bridges[key] = bridge
+                    if key[0] == "action":
+                        action_bridge = (key, bridge)
             return bridge.call(args, cwd=cwd)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
         finally:
-            if admission is not None:
-                with lock:
+            with lock:
+                if admission is not None:
                     admissions[session_id].discard(admission)
                     if not admissions[session_id]:
                         del admissions[session_id]
+                if action_bridge is not None:
+                    key, bridge = action_bridge
+                    if bridges.get(key) is bridge:
+                        bridges.pop(key)
+            if action_bridge is not None:
+                action_bridge[1].close()
 
     def finalize(session_id="", old_session_id=None, **_):
-        # Gateway reset names the replacement in session_id, unlike CLI/TUI.
+        # Some reset hooks identify a replacement; prefer an explicit old ID.
         retired_id = old_session_id or session_id
         with lock:
             for admission in admissions.get(retired_id, ()):
                 admission.set()
             finalizing[retired_id] = finalizing.get(retired_id, 0) + 1
-            if retired_id:
-                finalized[retired_id] = native_identity(getattr(ctx._manager, "_cli_ref", None))
-                finalized.move_to_end(retired_id)
-                while len(finalized) > MAX_FINALIZED_IDENTITIES:
-                    finalized.popitem(last=False)
             doomed = [key for key, bridge in bridges.items() if bridge.route.owns(retired_id) or not bridge.route.alive()]
             stopped = [bridges.pop(key) for key in doomed]
         try:
@@ -144,7 +125,6 @@ def register(ctx):
         nonlocal closed
         with lock:
             closed = True
-            finalized.clear()
             stopped = list(bridges.values())
             bridges.clear()
         for bridge in stopped:
@@ -158,4 +138,4 @@ def register(ctx):
     atexit.register(close_all)
     ctx.on_unload(lambda: atexit.unregister(close_all))
     ctx.register_skill("monitor-pr", Path(__file__).parent / "skills" / "monitor-pr" / "SKILL.md")
-    ctx.register_system_prompt_section("pr-monitor.workflow", "After opening a GitHub PR, load pr-monitor:monitor-pr with skill_view and call pr_monitor(action='start', pr='owner/repo#123'). Act on every [PR Monitor] report. The monitor owns waiting; end your turn when nothing needs action.")
+    ctx.register_system_prompt_section("pr-monitor.workflow", "Background monitoring requires Hermes Desktop/TUI; other hosts can use standalone mark_ready/unmark_ready actions. In Desktop/TUI, after opening a GitHub PR, load pr-monitor:monitor-pr with skill_view and call pr_monitor(action='start', pr='owner/repo#123'). Act on every [PR Monitor] report. The monitor owns waiting; end your turn when nothing needs action.")

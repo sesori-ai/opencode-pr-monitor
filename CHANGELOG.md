@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Hermes Git plugin backed by the shared monitoring runtime, with Desktop/TUI conversation delivery, native
-  CLI/messaging-gateway injection, acknowledged report failures, lifecycle cleanup, and packaged adapter tests.
-  Desktop uses a guarded gateway compatibility adapter; ACP and isolated Desktop turns remain unsupported.
+- Hermes Git plugin backed by the shared monitoring runtime, with Desktop/TUI conversation delivery,
+  acknowledged report failures, lifecycle cleanup, and packaged adapter tests. Standalone label actions work on
+  all Hermes hosts. Desktop uses a guarded compatibility adapter; CLI, messaging gateways, ACP and isolated
+  Desktop turns reject background monitoring because their native APIs cannot bind reports to the original conversation.
 
 ### Changed
 
@@ -25,9 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Hermes teardown rejects late worker admission and drains already admitted report delivery; busy Desktop delivery
-  rechecks conversation ownership before redirecting. Host-confirmed resumes can restart finalized conversations.
-  Admission cancellation is scoped to its conversation; bounded weak identity records avoid retaining old agents or
-  confusing a resumed agent with a reused object ID.
+  rechecks conversation ownership before redirecting. Admission cancellation is scoped to its conversation and
+  retains no retired-session cache. Standalone label actions preserve active-watch configuration when present and
+  otherwise close their temporary worker after completing the action.
 - Hermes builds remove stale generated artifacts, release output names the Hermes manifest, and worker tests retain
   normal unittest assertion reporting. The Codex workflow links directly to the hook-trust setup instructions.
 

@@ -98,9 +98,11 @@ where the plugin root sits in the repo.
 `hermes/` is a Python Git plugin. `hermes/src/worker.ts` embeds `runtime/` and `core/` in the committed
 `hermes/dist/worker.mjs`; `build:hermes` also generates the tool schema and copies the canonical push-host skill.
 Python owns one worker per conversation, delivery acknowledgements, profile context, and lifecycle cleanup.
-`hermes/desktop.py` contains the experimental Desktop/TUI gateway compatibility seam; CLI/messaging gateways
-use native plugin injection. ACP is explicitly unsupported. Never import a new Desktop gateway to find a
-conversation or use foreground selection as delivery identity. Update `docs/regression/hermes.md` for host evidence.
+`hermes/desktop.py` contains the experimental Desktop/TUI gateway compatibility seam. CLI, messaging gateways,
+ACP and isolated Desktop turns reject background monitoring because their native injection APIs cannot bind
+reports to the original durable conversation. Standalone ready actions need no report route and close their
+one-shot worker; actions for an existing Desktop watch reuse its worker and captured configuration. Never import
+a new Desktop gateway to find a conversation or use foreground selection as delivery identity. Update `docs/regression/hermes.md` for host evidence.
 Hermes plugin version is part of the lockstep release check. Rebuild and commit its artifacts on shared changes.
 
 ## Core flow (both shells)

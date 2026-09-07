@@ -1648,7 +1648,7 @@ function createNodeGhRunner() {
 
 // hermes/src/worker.ts
 var description = buildMonitorToolDescription({
-  delivery: "Reports start a turn in the owning conversation when idle; busy delivery uses the host's active-turn injection.",
+  delivery: "Background monitoring requires Hermes Desktop/TUI: reports start a turn in the owning conversation when idle and inject into its active turn when busy. Standalone mark_ready/unmark_ready actions need no background-delivery route and work on other Hermes hosts.",
   configPath: "repository .pr-monitor.json, then .hermes/pr-monitor.json, then .opencode/pr-monitor.json",
   lifecycle: "Watches stop on conversation finalization, plugin unload, or host exit; restart them after a restart.",
   waiting: "When nothing remains to handle, end the turn; never create a waiter."

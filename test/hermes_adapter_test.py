@@ -12,12 +12,11 @@ import tempfile
 import threading
 import types
 import unittest
-import weakref
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from hermes import NativeRoute, register
+from hermes import register
 from hermes.bridge import Bridge
 from hermes.desktop import DesktopRoute
 
@@ -130,26 +129,6 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNone(DesktopRoute.capture("stored-a", "ui-a"))
 
 
-class NativeTests(unittest.TestCase):
-    def test_cli_does_not_inject_into_replacement_conversation(self):
-        cli = types.SimpleNamespace(session_id="a")
-        sent = []
-        ctx = types.SimpleNamespace(_manager=types.SimpleNamespace(_cli_ref=cli),
-            inject_message=lambda text, **_: sent.append(text) or True)
-        route = NativeRoute(ctx, "a", "", cli)
-        route.deliver("first")
-        cli.session_id = "b"
-        with self.assertRaises(RuntimeError):
-            route.deliver("foreign")
-        self.assertEqual(sent, ["first"])
-
-    def test_gateway_rejection_propagates(self):
-        ctx = types.SimpleNamespace(_manager=types.SimpleNamespace(has_gateway_message_injector=True),
-            inject_message=lambda *a, **k: False)
-        with self.assertRaises(RuntimeError):
-            NativeRoute(ctx, "a", "gateway-a", None).deliver("retry me")
-
-
 class RegistrationTests(unittest.TestCase):
     def test_tool_skill_and_cleanup_are_registered_and_unsupported_hosts_fail(self):
         calls, hooks, unload = {}, {}, []
@@ -171,21 +150,31 @@ class RegistrationTests(unittest.TestCase):
             "agent.runtime_cwd": types.SimpleNamespace(resolve_agent_cwd=lambda: ROOT),
             "gateway.session_context": types.SimpleNamespace(get_session_env=lambda _: "")}
         with patch.dict(sys.modules, modules):
-            self.assertIn("ACP is not supported", calls["handler"]({"action": "start"}, session_id="a"))
+            self.assertIn("requires Hermes Desktop/TUI", calls["handler"]({"action": "start"}, session_id="a"))
             modules["agent.delegation_context"].is_delegated_child_context = lambda: True
             self.assertIn("delegated child", calls["handler"]({"action": "start"}, session_id="a"))
 
 
-class LiveIdentity(types.SimpleNamespace):
-    pass
+class LifecycleRoute:
+    def __init__(self, session_id):
+        self.session_id, self.live = session_id, True
+
+    def alive(self):
+        return self.live
+
+    def owns(self, session_id):
+        return session_id == self.session_id
+
+    def close(self):
+        self.live = False
 
 
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         self.calls, self.hooks, self.unload, self.workers = {}, {}, [], []
-        self.cli = LiveIdentity(session_id="a")
+        self.routes = {"a": LifecycleRoute("a"), "b": LifecycleRoute("b")}
+        self.ui_session_id = "ui-a"
         self.ctx = types.SimpleNamespace(
-            _manager=types.SimpleNamespace(_cli_ref=self.cli),
             register_tool=lambda **kw: self.calls.update(kw),
             register_hook=lambda name, fn: self.hooks.update({name: fn}), on_unload=self.unload.append,
             register_skill=lambda *a: None, register_system_prompt_section=lambda *a: None,
@@ -194,11 +183,14 @@ class LifecycleTests(unittest.TestCase):
             "agent": types.ModuleType("agent"), "gateway": types.ModuleType("gateway"),
             "agent.delegation_context": types.SimpleNamespace(is_delegated_child_context=lambda: False),
             "agent.runtime_cwd": types.SimpleNamespace(resolve_agent_cwd=lambda: ROOT),
-            "gateway.session_context": types.SimpleNamespace(get_session_env=lambda _: ""),
+            "gateway.session_context": types.SimpleNamespace(get_session_env=lambda _: self.ui_session_id),
         }
         modules = patch.dict(sys.modules, self.modules)
         modules.start()
         self.addCleanup(modules.stop)
+        capture = patch("hermes.DesktopRoute.capture", side_effect=lambda session_id, _: self.routes.get(session_id))
+        capture.start()
+        self.addCleanup(capture.stop)
         case = self
         class FakeBridge:
             def __init__(self, cwd, route):
@@ -211,6 +203,8 @@ class LifecycleTests(unittest.TestCase):
                 return "started"
             def close(self):
                 self._closed = True
+                if hasattr(self.route, "close"):
+                    self.route.close()
                 self.on_close()
         bridges = patch("hermes.Bridge", FakeBridge)
         bridges.start()
@@ -219,7 +213,11 @@ class LifecycleTests(unittest.TestCase):
         self.addCleanup(lambda: [fn() for fn in reversed(self.unload)])
 
     def start(self, sid="a"):
+        self.ui_session_id = "ui-" + sid
         return self.calls["handler"]({"action": "start", "pr": "example/repo#1"}, session_id=sid)
+
+    def resume(self, sid="a"):
+        self.routes[sid] = LifecycleRoute(sid)
 
     def test_finalize_and_unload_reject_late_admission_before_workers_finish_closing(self):
         self.assertEqual(self.start(), "started")
@@ -229,7 +227,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("conversation changed", late.pop())
         self.assertEqual(len(self.workers), 1)
         self.assertIn("conversation changed", self.start())
-        self.cli.agent = LiveIdentity()
+        self.resume()
         self.assertEqual(self.start(), "started")
         self.workers[-1].on_close = lambda: late.append(self.start())
         self.unload[0]()
@@ -237,56 +235,66 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("unloaded", self.start())
         self.assertEqual(len(self.workers), 2)
 
+    def test_standalone_ready_actions_need_no_delivery_route_or_session_identity(self):
+        with patch("hermes.DesktopRoute.capture", side_effect=AssertionError("label actions must not capture delivery")):
+            for action in ("mark_ready", "unmark_ready"):
+                result = self.calls["handler"]({"action": action, "pr": "example/repo#1"})
+                self.assertEqual(result, "started")
+                self.assertTrue(self.workers[-1]._closed)
+        self.assertEqual(len(self.workers), 2)
+
+    def test_ready_actions_reuse_an_existing_worker_without_recapturing_delivery(self):
+        self.assertEqual(self.start(), "started")
+        with patch("hermes.DesktopRoute.capture", side_effect=RuntimeError("delivery unavailable")):
+            result = self.calls["handler"]({"action": "mark_ready", "pr": "example/repo#1"}, session_id="a")
+        self.assertEqual(result, "started")
+        self.assertEqual(len(self.workers), 1)
+        self.assertFalse(self.workers[0]._closed)
+
+    def test_native_injection_availability_does_not_enable_unsafe_monitoring(self):
+        self.ctx._manager = types.SimpleNamespace(has_gateway_message_injector=True)
+        self.ctx.inject_message = lambda *a, **kw: self.fail("must not inject into native queues")
+        self.ctx._gateway_injection_allowed = lambda: True
+        with patch("hermes.DesktopRoute.capture", return_value=None):
+            for cli in (None, types.SimpleNamespace(session_id="a")):
+                self.ctx._manager._cli_ref = cli
+                self.assertIn("requires Hermes Desktop/TUI", self.start())
+        self.assertFalse(self.workers)
+
     def test_capture_racing_finalize_cannot_create_a_worker(self):
         def finalize_during_capture(*_):
             self.hooks["on_session_finalize"](session_id="a")
-            # Even a subsequent real resume cannot revive this old admission.
-            self.cli.agent = LiveIdentity()
-            return None
+            self.resume()
+            return self.routes["a"]
         with patch("hermes.DesktopRoute.capture", finalize_during_capture):
             self.assertIn("conversation changed", self.start())
         self.assertFalse(self.workers)
         self.assertEqual(self.start(), "started")
 
     def test_unrelated_finalization_does_not_cancel_admission(self):
-        self.cli.session_id = "b"
         def finalize_other_conversation(*_):
             self.hooks["on_session_finalize"](session_id="a")
-            return None
+            return self.routes["b"]
         with patch("hermes.DesktopRoute.capture", finalize_other_conversation):
             self.assertEqual(self.start("b"), "started")
         self.assertEqual(len(self.workers), 1)
 
-    def test_retired_identity_eviction_cannot_revive_an_inflight_admission(self):
-        def finalize_and_churn(*_):
-            self.hooks["on_session_finalize"](session_id="a")
-            for number in range(5):
-                self.hooks["on_session_finalize"](session_id=f"other-{number}")
-            return None
-        with patch("hermes.MAX_FINALIZED_IDENTITIES", 4), patch("hermes.DesktopRoute.capture", finalize_and_churn):
+    def test_repeated_lifecycle_events_cannot_revive_an_inflight_admission(self):
+        def finalize_and_resume(*_):
+            for _ in range(300):
+                self.hooks["on_session_finalize"](session_id="a")
+                self.resume()
+            return self.routes["a"]
+        with patch("hermes.DesktopRoute.capture", finalize_and_resume):
             self.assertIn("conversation changed", self.start())
         self.assertFalse(self.workers)
-        self.cli.agent = LiveIdentity()
         self.assertEqual(self.start(), "started")
-
-    def test_cli_resume_with_new_agent_accepts_same_durable_identity(self):
-        # Simulate recycled object IDs: retirement must use weak object identity.
-        with patch("hermes.id", return_value=7, create=True):
-            self.cli.agent = LiveIdentity()
-            old_agent = weakref.ref(self.cli.agent)
-            self.assertEqual(self.start(), "started")
-            self.hooks["on_session_finalize"](session_id="a")
-            self.assertIn("conversation changed", self.start())
-            self.cli.agent = None
-            self.assertIsNone(old_agent(), "retirement retained the old agent")
-            self.cli.agent = LiveIdentity()
-            self.assertEqual(self.start(), "started")
 
     def test_resume_waits_until_previous_workers_finish_closing(self):
         self.assertEqual(self.start(), "started")
         late = []
         def resume_during_close():
-            self.cli.agent = LiveIdentity()
+            self.resume()
             late.append(self.start())
         self.workers[0].on_close = resume_during_close
         self.hooks["on_session_finalize"](session_id="a")
@@ -294,11 +302,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.workers), 1)
         self.assertEqual(self.start(), "started")
 
-    def test_gateway_reset_retires_old_identity_not_replacement(self):
+    def test_reset_with_explicit_old_identity_keeps_replacement_worker(self):
         self.assertEqual(self.start(), "started")
-        self.cli.session_id = "b"
+        self.assertEqual(self.start("b"), "started")
         self.hooks["on_session_reset"](session_id="b", old_session_id="a", new_session_id="b")
         self.assertTrue(self.workers[0]._closed)
+        self.assertFalse(self.workers[1]._closed)
         self.assertEqual(self.start("b"), "started")
 
 
@@ -424,6 +433,44 @@ class WorkerTests(unittest.TestCase):
             self.assertIn("example/repo#1", self.bridge.call({"action": "status"}))
         finally:
             sibling.close()
+
+    def test_standalone_labels_from_an_unsupported_host_use_and_close_bundled_workers(self):
+        (self.root / ".pr-monitor.json").write_text(json.dumps({"readyLabel": "fixture-ready"}))
+        (self.root / "gh").write_text("#!" + sys.executable + "\n" +
+            "import json, pathlib, sys\n" +
+            "with pathlib.Path('label-calls.jsonl').open('a') as log: log.write(json.dumps(sys.argv[1:]) + '\\n')\n" +
+            "print(json.dumps({'state': 'open', 'merged': False}) if any('/pulls/' in arg for arg in sys.argv) else '{}')\n")
+        calls, unload, workers = {}, [], []
+        ctx = types.SimpleNamespace(
+            register_tool=lambda **kw: calls.update(kw), register_hook=lambda *a: None,
+            on_unload=unload.append, register_skill=lambda *a: None, register_system_prompt_section=lambda *a: None,
+        )
+        modules = {
+            "agent": types.ModuleType("agent"), "gateway": types.ModuleType("gateway"),
+            "agent.delegation_context": types.SimpleNamespace(is_delegated_child_context=lambda: False),
+            "agent.runtime_cwd": types.SimpleNamespace(resolve_agent_cwd=lambda: self.root),
+            "gateway.session_context": types.SimpleNamespace(get_session_env=lambda _: ""),
+        }
+        def create_worker(cwd, route):
+            worker = Bridge(cwd, route)
+            workers.append(worker)
+            return worker
+        register(ctx)
+        try:
+            with patch.dict(sys.modules, modules), patch("hermes.Bridge", create_worker):
+                self.assertIn("fixture-ready", calls["handler"]({"action": "mark_ready", "pr": "example/repo#1"}))
+                self.assertIn("Removed", calls["handler"]({"action": "unmark_ready", "pr": "example/repo#1"}))
+            self.assertEqual(len(workers), 2)
+            self.assertTrue(all(worker._process.poll() is not None for worker in workers))
+            requests = [json.loads(line) for line in (self.root / "label-calls.jsonl").read_text().splitlines()]
+            self.assertTrue(any("labels[]=fixture-ready" in request for request in requests))
+            self.assertTrue(any("DELETE" in request and "repos/example/repo/issues/1/labels/fixture-ready" in request for request in requests))
+            self.assertTrue(self.reports.empty())
+        finally:
+            for fn in reversed(unload):
+                fn()
+            for worker in workers:
+                worker.close()
 
     def test_invalid_action_and_worker_exit_are_reported(self):
         with self.assertRaisesRegex(RuntimeError, "Invalid monitor action"):

@@ -49,17 +49,18 @@ session that started the watch, and manages the ready-for-human-review label fro
 
 ## Hermes
 
-Hermes Desktop/TUI, CLI and messaging gateways use a Python plugin backed by the shared Node monitoring engine:
+Hermes Desktop/TUI monitoring uses a Python plugin backed by the shared Node engine. Standalone label actions also work on other Hermes hosts:
 
 ```sh
 hermes plugins install sesori-ai/pr-monitor-plugin/hermes
 hermes plugins enable pr-monitor
 ```
 
-Restart the Hermes gateway/CLI after enabling the plugin. Node.js 18+ and authenticated `gh` must be available
+Restart the Hermes host after enabling the plugin. Node.js 18+ and authenticated `gh` must be available
 on the backend's PATH. Desktop reports target the original conversation, starting a turn when idle and injecting into the active turn
-when busy, including merge/close after handoff. Desktop uses a compatibility adapter for Hermes's internal gateway;
-ACP (including Hermes through Sesori) and isolated Desktop turns are not supported. See [Hermes setup and lifecycle](hermes/README.md).
+when busy, including merge/close after handoff. Desktop uses a compatibility adapter for Hermes's internal gateway.
+CLI, messaging gateways, ACP (including Hermes through Sesori), and isolated Desktop turns do not support background
+monitoring. They can use standalone `mark_ready` / `unmark_ready` actions. See [Hermes setup and lifecycle](hermes/README.md).
 
 ## Claude Code
 
