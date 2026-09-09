@@ -22,6 +22,9 @@ const serverSource = await readFile(new URL("../claude-codex/src/mcp-server.ts",
 const serverVersion = /new McpServer\(\{ name: "pr-monitor", version: "([^"]+)" \}\)/.exec(serverSource)?.[1]
 versions.push(["Claude MCP", serverVersion])
 
+const hermesManifest = await readFile(new URL("../hermes/plugin.yaml", import.meta.url), "utf8")
+versions.push(["Hermes", /^version: (.+)$/m.exec(hermesManifest)?.[1]])
+
 const drift = versions.filter(([, version]) => version !== expected)
 if (drift.length > 0) {
   throw new Error(`release version drift: ${versions.map(([name, version]) => `${name}=${version}`).join(", ")}`)

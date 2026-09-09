@@ -1,0 +1,28 @@
+{
+  "name": "pr_monitor",
+  "description": "Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; Background monitoring requires Hermes Desktop/TUI: reports start a turn in the owning conversation when idle and inject into its active turn when busy. Standalone mark_ready/unmark_ready actions need no background-delivery route and work on other Hermes hosts. Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports observe the existing label; assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated `gh pr checks`, or routine status/flush calls while waiting. When nothing remains to handle, end the turn; never create a waiter. Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). Ready actions do not require an active monitor. The PR must be `owner/repo#123` or a full URL; `all` is allowed only for stop/flush. Tuning lives in repository .pr-monitor.json, then .hermes/pr-monitor.json, then .opencode/pr-monitor.json. Watches stop on conversation finalization, plugin unload, or host exit; restart them after a restart.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "start",
+          "stop",
+          "flush",
+          "status",
+          "mark_ready",
+          "unmark_ready"
+        ]
+      },
+      "pr": {
+        "type": "string",
+        "description": "Explicit owner/repo#123 or GitHub PR URL; all only for stop/flush."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

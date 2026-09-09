@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Hermes Git plugin backed by the shared monitoring runtime, with Desktop/TUI conversation delivery,
+  acknowledged report failures, lifecycle cleanup, and packaged adapter tests. Standalone label actions work on
+  all Hermes hosts. Desktop uses a guarded compatibility adapter; CLI, messaging gateways, ACP and isolated
+  Desktop turns reject background monitoring because their native APIs cannot bind reports to the original conversation.
+
+### Changed
+
+- Document Codex's post-handoff idle-delivery limitation: merged/closed reports remain in the owning conversation's
+  spool until another prompt or hook event.
+- Codex setup now explicitly requires review of all four delivery hooks, with terminal instructions for Sesori,
+  remote bridges, and other clients without `/hooks`, plus guidance for renewed review after plugin updates.
+- Missing-registration errors and the Claude Code/Codex monitor skill explain the separate hook-trust step and
+  how to recover in the same host configuration without repeatedly retrying or creating registration by hand.
+
+### Fixed
+
+- Hermes teardown rejects late worker admission and drains already admitted report delivery; busy Desktop delivery
+  rechecks conversation ownership before redirecting. Admission cancellation is scoped to its conversation and
+  retains no retired-session cache. Standalone label actions preserve active-watch configuration when present and
+  otherwise close their temporary worker after completing the action; dead or closing Desktop workers are removed
+  and rechecked before a label action can reuse them.
+- Hermes builds remove stale generated artifacts, release output names the Hermes manifest, and worker tests retain
+  normal unittest assertion reporting. The Codex workflow links directly to the hook-trust setup instructions.
+
 ## [0.4.1]
 
 ### Changed

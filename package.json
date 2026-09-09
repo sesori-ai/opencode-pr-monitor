@@ -10,10 +10,11 @@
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "build": "npm run build:opencode && npm run build:pi && npm run build:claude",
+    "build": "npm run build:opencode && npm run build:pi && npm run build:claude && npm run build:hermes",
     "build:opencode": "node scripts/build-opencode.mjs",
     "build:pi": "node scripts/build-pi.mjs",
     "build:claude": "node scripts/build-claude.mjs",
+    "build:hermes": "node scripts/build-hermes.mjs",
     "clean": "node scripts/clean.mjs",
     "pack:check": "npm run build:opencode && npm run build:pi && node scripts/check-pack.mjs",
     "host:check": "npm run build:pi && node scripts/check-pi-loader.mjs && node scripts/check-pi-package.mjs && node scripts/run-omp-loader-check.mjs",

@@ -69,6 +69,8 @@ name the owning source/tests, highest level, proof boundary, and required host/p
 
 ## Feature Index
 
+- [`hermes.md`](hermes.md) — Hermes tool, delivery, lifecycle, packaged worker, and actual-host acceptance.
+
 - [`pull-request-monitoring.md`](pull-request-monitoring.md) — shared watch/activity/report semantics, autonomous
   ownership, ready-label handoff, host delivery/lifecycle, and configuration. Highest level: L5; primary boundaries:
   automated through packaged/external.

@@ -27,6 +27,11 @@ for (const path of manifests) {
   await writeFile(url, text.replace(field, `$1"${version}"`))
 }
 
+const hermesUrl = new URL("hermes/plugin.yaml", root)
+const hermes = await readFile(hermesUrl, "utf8")
+if (!/^version: .+$/m.test(hermes)) throw new Error("Hermes manifest version not found")
+await writeFile(hermesUrl, hermes.replace(/^version: .+$/m, `version: ${version}`))
+
 const serverUrl = new URL("claude-codex/src/mcp-server.ts", root)
 const server = await readFile(serverUrl, "utf8")
 const serverField = /new McpServer\(\{ name: "pr-monitor", version: "[^"]+" \}\)/
@@ -42,4 +47,4 @@ if (changelog.includes(`## [${version}]`)) {
 } else {
   await writeFile(changelogUrl, changelog.replace(/^## \[Unreleased\]\r?\n/m, `## [Unreleased]\n\n## [${version}]\n`))
 }
-console.log(`version ${version} written to ${manifests.length} manifests, mcp-server.ts, and CHANGELOG.md`)
+console.log(`version ${version} written to ${manifests.length} JSON manifests, hermes/plugin.yaml, mcp-server.ts, and CHANGELOG.md`)

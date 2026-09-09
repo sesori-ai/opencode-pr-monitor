@@ -29,6 +29,19 @@ Always pass an explicit PR. Watches belong to this agent process (Claude Code
 or Codex) and do not survive a restart. In a fresh session, use `status` once
 and restart anything missing.
 
+If Codex reports that its delivery hook has not registered the conversation,
+monitoring has not started. Installing the plugin does not grant hook trust.
+Direct the user to review and enable all four PR Monitor hooks (`SessionStart`,
+`UserPromptSubmit`, `PostToolUse`, `Stop`) through `/hooks` in Codex CLI, on the
+host running the session with the same OS user and `CODEX_HOME`. Sesori and
+other clients without that screen require a terminal on the app-server host.
+After approval, a new prompt or tool event registers the conversation; retry
+then. Changed hooks may need review after updates. Do not repeatedly retry
+without a setup change, manufacture registration files, or bypass hook trust.
+See the [required hook-trust setup steps](https://github.com/sesori-ai/pr-monitor-plugin#trust-the-delivery-hooks-required). If the user has
+already approved these exact hooks, help complete that review without asking
+for the same permission again.
+
 The start result states the configured agent-reply prefix. Every GitHub reply
 written by the agent **must begin with that exact prefix** (default
 `<!-- pr-monitor:reply -->`). The human owner may comment through the same
