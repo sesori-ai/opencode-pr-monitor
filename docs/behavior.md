@@ -1,117 +1,117 @@
-# Monitor behavior
+# How the monitor decides
 
 [← README](../README.md)
 
-PR Monitor turns GitHub state changes into bounded, factual work items for an agent. This document describes the
-shared behavior across every host; delivery and lifecycle differences are in the [installation guide](installation.md).
+This page explains what PR Monitor watches, when it sends a report, and how it decides a PR is ready for a human.
+The behavior is the same on every host. Delivery and lifecycle differences are in the [host guide](hosts.md).
 
-## Polling and activity
+## What counts as activity
 
-Each watched PR uses one base `gh api graphql` query per tick. Extra pages are fetched only when check contexts,
-latest reviews, review threads, or labels overflow their first page.
+Each watched PR is polled with one GitHub GraphQL query per tick. Extra pages are fetched only when checks, reviews,
+review threads, or labels overflow the first page.
 
-Activity includes:
+These count as activity:
 
 - a new head commit;
-- PR state or definite mergeability changes;
-- review and review-summary changes;
-- relevant inline or issue comments;
-- review-thread resolution changes; and
-- CI suite conclusions.
+- the PR state changing, or mergeability settling on a definite value;
+- a new or changed review, or a new review summary;
+- a relevant inline or issue comment;
+- a review thread being resolved or unresolved; and
+- a CI suite finishing.
 
-A head change counts immediately, before GitHub registers new checks. A transition into running CI and non-failing
-per-check progress on the same head stay quiet. Mergeability compares against the last definite value, preventing
-transient `UNKNOWN` churn while still detecting a settled conflict.
+A new commit counts right away, before GitHub has registered its checks. CI merely starting, or individual checks
+passing on the same commit, does not count. Mergeability is compared against the last definite value, so GitHub's
+temporary `UNKNOWN` state does not cause noise while a real conflict is still caught.
 
-## Report timing
+## When you get a report
 
 ### Ordinary activity
 
-Ordinary activity uses a rolling debounce. Every new event resets `debounceMinutes`; one report is sent after the PR
-has remained quiet for that window.
+Ordinary activity is batched. Each new event restarts a quiet timer of `debounceMinutes`. When the PR has been quiet
+for that long, one report goes out.
 
-If a due report reaches its quiet window while CI is running, PR Monitor holds it for up to `maxCiWaitMinutes`. This
-usually replaces separate “activity” and “CI finished” messages with one complete report.
+If the timer runs out while CI is still running, the report waits for CI, up to `maxCiWaitMinutes`. That way you
+usually get one "here is what changed, and CI passed" message instead of two.
 
-### Immediate activity
+### Right away
 
-These events bypass both debounce and CI hold, producing a report at the next poll:
+Three things skip the timers and are reported at the next poll:
 
-- the first newly failing check on a head when `flushOnCiFailure` is enabled;
-- a newly definite merge conflict; and
-- merge or close.
+- a check that newly fails, meaning one the monitor has not already seen failing on that commit, when
+  `flushOnCiFailure` is on;
+- a merge conflict that has just become definite; and
+- the PR merging or closing.
 
-Only one instant CI-failure report is sent per head. Further failures on that commit appear in the normal
-suite-conclusion report.
+Only one such instant failure report is sent per commit. Later failures on the same commit ride along with the
+normal report. A check that was already failing when the monitor started is not new: it shows up in the startup
+report when `announceOnStart` is on, not as an instant alert.
 
-## Report contents
+## What a report contains
 
-Reports identify status and authors without quoting comment bodies. A full report includes:
+Reports state facts and name people. They never quote comment bodies. A full report has:
 
-- PR target, URL, and title;
-- CI phase, completion counts, and failed check names;
+- the PR, its URL, and its title;
+- CI status, how many checks finished, and the names of any failed checks;
 - mergeability;
 - requested and completed reviews;
 - new review summaries;
-- changed inline threads, current resolution state, and relevant-comment authors;
-- issue-comment counts and authors;
-- ready-label presence; and
-- one explicit next step.
+- inline threads that changed, whether they are resolved, and who commented;
+- how many issue comments arrived and from whom;
+- whether the ready label is present; and
+- one clear next step.
 
-“New since last flush” compares stable GitHub comment IDs with the last delivered report or manual `flush`. Comments
-created in the same timestamp second are not lost.
+"New since the last report" is worked out from GitHub comment IDs, not timestamps, so two comments posted in the
+same second are not lost.
 
-## Feedback acknowledgement
+## Answering feedback
 
-PR Monitor treats acknowledgement separately from GitHub thread resolution.
+PR Monitor tracks whether feedback has been answered separately from whether GitHub shows a thread as resolved.
 
-### Inline review threads
+**Inline review threads.** Any new relevant comment on an existing thread, resolved or not, is reported as
+`ACTION REQUIRED`. The report lists every changed thread and points out when the unresolved count did not change. A
+thread counts as answered when the latest feedback is followed by a reply from the monitoring account that starts
+with the exact `ignoreCommentTag` prefix. The thread can stay unresolved on purpose.
 
-Any new relevant comment on an existing thread—including a resolved thread—is reported as `ACTION REQUIRED`. The
-report identifies every changed thread and warns when the unresolved count did not change.
+**Review summaries and issue comments.** These have no thread to reply in. A later prefixed issue comment from the
+monitoring account answers the latest review summary or issue comment.
 
-A thread is acknowledged when its latest feedback is followed by a local-account reply beginning with the exact
-configured `ignoreCommentTag`. The thread may remain unresolved intentionally.
-
-### Review summaries and issue comments
-
-Flat feedback has no thread reply channel. A later prefixed issue comment from the local account acknowledges the
-latest review-summary or issue-comment feedback.
-
-Editing or deleting an acknowledgement withdraws its evidence. Feedback and replies sharing the same GitHub
-one-second timestamp remain conservatively unacknowledged until a later reply or manual `mark_ready`.
+Editing or deleting a reply removes it as proof. If feedback and a reply land in the same second, PR Monitor plays it
+safe and treats the feedback as unanswered until a later reply or a manual `mark_ready`.
 
 ## Readiness
 
-Automatic readiness requires all three conditions:
+PR Monitor adds the ready label on its own when all three hold:
 
-1. CI is green or absent;
-2. mergeability is definitely `MERGEABLE`; and
-3. every feedback channel ends in a valid prefixed local reply.
+1. CI is green, or there is no CI;
+2. GitHub reports the PR as `MERGEABLE`; and
+3. every feedback channel ends with a valid prefixed reply.
 
-A later head, relevant comment or review summary, acknowledgement edit/deletion, CI regression, or conflict
-withdraws readiness. Resolution state, stale review state, pending reviewers, draft state, and terminal state do not
-independently withdraw it.
+A new commit, a relevant comment or review summary, an edited or deleted reply, a CI failure, or a conflict takes the
+label off again. Thread resolution, stale reviews, pending reviewers, draft status, and the PR being merged or closed
+do not take it off on their own.
 
-At startup, PR Monitor observes an existing ready label without automatically re-adding it. The agent must assess
-the initial report, including after a host restart. It may mark an already-settled PR immediately, but empty results
-after PR creation or a fresh push—and age alone—do not prove readiness. With auto-merge enabled, startup instead
-clears stale readiness and requires fresh assessment; see [auto-merge safety](configuration.md#auto-merge).
+When a monitor starts, it notes an existing ready label but does not re-add one. The agent has to look at the first
+report and decide, including after a host restart. A PR that was already settled can be marked ready immediately,
+but "nothing has happened yet" right after opening or pushing is not evidence, and neither is age. With auto-merge
+on, startup instead removes a stale ready label and asks for a fresh assessment; see
+[auto-merge](configuration.md#auto-merge).
 
-`mark_ready` unconditionally accepts the current state and applies the configured label. Use it only after inspecting
-non-actionable activity that should not receive another reply. `unmark_ready` is idempotent and removes the label
-now; it is not a permanent hold, so later observed clean activity may restore readiness.
+`mark_ready` accepts the PR as it is and adds the label. Use it after looking at feedback that needs no reply, such
+as a bot comment. `unmark_ready` removes the label now, but it is not a permanent hold: if the monitor later sees the
+PR clean again, the label comes back.
 
-## Failure and terminal handling
+## When a monitor stops
 
-- A deleted or inaccessible PR stops immediately with a notice.
-- Ten consecutive polling failures stop the monitor.
-- Ten consecutive report-delivery failures stop the monitor.
-- Delivery failure preserves the old baseline, so the same activity retries instead of disappearing.
-- Failed initial delivery retains a zero baseline and retries the full startup report on the next poll.
-- Merge and close produce an immediate final report with `Monitor stopped: PR merged|closed`, then stop the watch.
-- Manual, lifecycle, and failure stops use the same `Monitor stopped: <reason>` wording.
+- The PR was deleted or is no longer accessible: stops immediately with a notice.
+- Ten polls in a row failed: stops.
+- Ten report deliveries in a row failed: stops.
+- A single failed delivery keeps the old baseline, so the same activity is retried rather than lost. A failed first
+  report is retried in full at the next poll.
+- The PR merged or closed: one final report ending in `Monitor stopped: PR merged` or `Monitor stopped: PR closed`,
+  then the monitor stops.
+- Manual, lifecycle, and failure stops all use the same `Monitor stopped: <reason>` wording.
 
-Watches are session-scoped and in memory. They stop automatically on terminal PR state but do not survive host
-restart. After `start`, the agent must end its turn and let PR Monitor deliver events; sleeps, scheduled checks,
-background polling, repeated `gh pr checks`, and routine `status` or `flush` calls are unsupported.
+Monitors live in memory and belong to the conversation that started them. They stop by themselves when the PR is
+done but do not survive a host restart. After `start`, the agent should end its turn and let reports come to it.
+Sleeps, scheduled checks, background polling, repeated `gh pr checks`, and routine `status` or `flush` calls are not
+supported.

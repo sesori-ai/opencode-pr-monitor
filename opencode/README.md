@@ -1,11 +1,13 @@
 # @sesori/pr-monitor-opencode
 
-OpenCode plugin that watches GitHub pull requests, manages ready-for-human-review state, and delivers `[PR Monitor]`
-reports to the session that started each watch.
+OpenCode plugin that watches your GitHub pull requests and posts `[PR Monitor]` status reports into the session that
+started the monitor. It also manages the ready-for-human-review label.
 
 ## Install
 
-Add the package to project or global `opencode.json`:
+Needs OpenCode 1.17 or newer and a logged-in GitHub CLI (`gh auth status`).
+
+Add the plugin to your project `opencode.json`, or to `~/.config/opencode/opencode.json` for every project:
 
 ```jsonc
 {
@@ -14,49 +16,46 @@ Add the package to project or global `opencode.json`:
 }
 ```
 
-Requirements: OpenCode 1.17 or newer, plus an installed and authenticated GitHub CLI (`gh auth status`).
+Restart OpenCode and you are done.
 
-## Behavior
+## What it does
 
-The plugin registers `pr_monitor` actions for `start`, `stop`, `flush`, `status`, `mark_ready`, and `unmark_ready`.
-It also injects one packaged `monitor-pr` skill through OpenCode's configured skill paths, so consuming repositories
-do not need their own copy. The skill tells the agent to start monitoring after opening a PR, handle every automatic
-report, use prefixed GitHub replies as acknowledgement evidence, and end the turn instead of creating a second wait
-mechanism.
+The plugin adds a `pr_monitor` tool with `start`, `stop`, `flush`, `status`, `mark_ready`, and `unmark_ready`
+actions, plus one `monitor-pr` skill. The skill tells the agent to start a monitor after opening a PR, act on every
+report, mark its GitHub replies with the reply prefix so the monitor can recognise them, and end its turn instead of
+polling on its own. Your repositories do not need their own copy of the skill.
 
-The monitor reports commits, CI, reviews/comments, conflicts, and terminal state. It automatically adds readiness
-when the current head is clean and feedback is acknowledged, then withdraws it on later commits or relevant feedback.
-Every report states readiness and contains no comment bodies.
+Reports cover new commits, CI, reviews and comments, merge conflicts, and the PR merging or closing. Each one says
+whether the PR is ready for human review and never quotes comment bodies. When CI passes (or there is none), the PR is
+mergeable, and all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
 
-The monitor owns all polling and notifications arrive automatically. Agents must never create sleeps, scheduled
-checks, background polling loops, repeated `gh pr checks`, or routine `status`/`flush` calls while waiting.
+The monitor owns the waiting. Agents should not sleep, schedule checks, poll in the background, run `gh pr checks`
+repeatedly, or call `status` and `flush` in a loop. Reports arrive on their own.
 
-Monitors are in memory, belong to the OpenCode session that started them, stop on merge/close or session deletion,
-and do not survive an OpenCode restart.
-
-Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
-readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
-an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
-removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
-`automatically-merged` label. See the repository's
-[auto-merge guide](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md#auto-merge) for
-failure behavior and safety details.
+Monitors live in memory and belong to the OpenCode session that started them. They stop when the PR merges or closes
+or the session is deleted, and they do not survive an OpenCode restart.
 
 ## Configuration
 
-Global `~/.config/pr-monitor/config.json` supplies defaults beneath repository `.pr-monitor.json`;
-`.opencode/pr-monitor.json` remains a project fallback. Available settings:
+Global settings live in `~/.config/pr-monitor/config.json`. A repository can override them in `.pr-monitor.json` or
+`.opencode/pr-monitor.json`. Settings:
 
 - `debounceMinutes`, `maxCiWaitMinutes`, and `pollIntervalSeconds`
-- `ignoreCommentTag` (mandatory agent-reply prefix; default `<!-- pr-monitor:reply -->`)
+- `ignoreCommentTag`, the prefix agent replies must start with (default `<!-- pr-monitor:reply -->`)
 - `announceOnStart` and `flushOnCiFailure`
 - `readyLabel` and `autoMerge`
 
-See the repository guides for [monitor behavior](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/behavior.md),
+To merge ready PRs automatically, set `autoMerge: true` in the global file or a trusted project file. Project config
+overrides global config, and an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With
+auto-merge on, starting a monitor removes any ready label that is already there and asks the agent to reassess.
+Merged PRs get an `automatically-merged` label. Read the
+[auto-merge guide](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md#auto-merge)
+before turning it on.
+
+More in the repository docs:
+[how the monitor decides](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/behavior.md),
 [configuration](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md), and
-[development/releases](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/development.md). Durable behavior
-and artifact checks are cataloged in the
-[regression directory](https://github.com/sesori-ai/pr-monitor-plugin/tree/main/docs/regression).
+[development and releases](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/development.md).
 
 ## License
 

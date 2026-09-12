@@ -1,63 +1,76 @@
-# Hermes PR Monitor
+# PR Monitor for Hermes
 
-Install from the repository's Hermes subdirectory:
+Watches your GitHub pull requests and posts `[PR Monitor]` status reports into the Hermes conversation that started
+the monitor. It also manages the ready-for-human-review label.
+
+## Install
 
 ```sh
 hermes plugins install sesori-ai/pr-monitor-plugin/hermes
 hermes plugins enable pr-monitor
 ```
 
-Restart Hermes Desktop's gateway, and start or resume a conversation. For standalone label actions on another host,
-restart that host after enabling the plugin.
-Ensure the `pr-monitor` toolset is enabled in that profile if you use an explicit toolset allow-list.
-Node.js 18+ and an authenticated GitHub CLI must be on the **Hermes backend's** PATH. No npm install or build
-is needed: `dist/worker.mjs`, `dist/tool.json`, and the workflow skill ship with the Git plugin.
+Then:
 
-Ask Hermes to monitor `owner/repo#123`, or open a PR and let the registered workflow start it automatically.
-The tool supports `start`, `stop`, `status`, `flush`, `mark_ready`, and `unmark_ready`. Load the workflow
-with `skill_view(name="pr-monitor:monitor-pr")`. Agents end their turn while the monitor owns polling.
+- Restart Hermes Desktop's gateway and start or resume a conversation. On other Hermes hosts, where only the manual
+  ready actions are available, restart that host after enabling the plugin.
+- Make sure Node.js 18+ and a logged-in GitHub CLI (`gh auth status`) are on the **Hermes backend's** `PATH`.
+- If your profile uses an explicit toolset allow-list, add the `pr-monitor` toolset.
 
-## Delivery and lifecycle
+No npm install or build step is needed. The worker, tool schema, and skill ship inside the plugin.
 
-- **Desktop/TUI:** reports enter the original live conversation through its background-turn entry point. An idle
-  conversation starts a turn; a busy conversation accepts a native active-turn redirect (or steer during tool
-  execution). Switching tabs does not retarget delivery. User-composed attachments are preserved. Merge/close
-  reports use the same path, even after readiness handoff.
-- **CLI, messaging gateways, ACP (including Hermes through Sesori), and Desktop `dashboard.turn_isolation: true`:**
-  background monitoring is unsupported and `start` fails explicitly. Native CLI/gateway injection does not bind
-  queued reports to the original durable conversation, so switching or resetting a conversation could retarget them.
-  Desktop's default `dashboard.turn_isolation: false` is supported.
-- **Standalone labels on all hosts:** `mark_ready` and `unmark_ready` work without a background-delivery route or an
-  active monitor. A temporary worker performs the action and closes. When the owning Desktop conversation already
-  has a worker, these actions reuse it and preserve its active-watch configuration.
+## Use
 
-Monitors live in one Node worker per conversation. Finalizing/resetting the conversation, unloading the plugin,
-quitting the host, or a worker failure stops its monitors. Ordinary turn completion does not stop them.
-Resume after a host restart and explicitly restart missing watches. No detached daemon survives the host.
-Global `~/.config/pr-monitor/config.json` supplies defaults. Project configuration is captured from the
-conversation's working directory: `.pr-monitor.json`, then `.hermes/pr-monitor.json`, then
-`.opencode/pr-monitor.json`.
+Ask Hermes to monitor `owner/repo#123`, or open a PR and let the bundled `monitor-pr` skill start the monitor for
+you. The tool offers `start`, `stop`, `status`, `flush`, `mark_ready`, and `unmark_ready`. To read the workflow the
+agent follows, run `skill_view(name="pr-monitor:monitor-pr")`. While a monitor runs, the agent ends its turn and
+lets PR Monitor do the polling.
 
-Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
-readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
-an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
-removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
-`automatically-merged` label. See [configuration and auto-merge safety](../docs/configuration.md#auto-merge) for
-failure behavior and setup details.
+## Where it works
 
-## Compatibility boundary
+- **Hermes Desktop and TUI** with the default `dashboard.turn_isolation: false`: full background monitoring. Reports
+  go into the original conversation. An idle conversation starts a turn; a busy one takes the report as a redirect,
+  or as a steer during tool execution. Switching tabs does not change where reports go, and anything you are typing
+  is kept. Merge and close reports use the same path, even after the ready handoff.
+- **Hermes CLI, messaging gateways, ACP (including Hermes through Sesori), and Desktop with
+  `dashboard.turn_isolation: true`**: background monitoring is not available, and `start` says so. These hosts
+  cannot bind a future report to the original conversation, so a switched or reset conversation could receive
+  another conversation's report.
+- **Manual ready actions work everywhere.** `mark_ready` and `unmark_ready` need neither a delivery route nor a
+  running monitor. A short-lived worker does the job and exits. If the Desktop conversation already has a worker,
+  the action reuses it and its settings.
 
-Hermes's public Python `inject_message` API does not currently cover Desktop/TUI. `desktop.py` is a narrow
-compatibility adapter for the live TUI gateway's session registry, transport binding and synchronous
-background-turn admission. It requires those interfaces and verifies the live record belongs to the tool's
-conversation. It never starts another gateway or resumes a closed chat. Hosts without these interfaces fail
-explicitly. A model-driven smoke test passed through the Desktop gateway with simulated GitHub data; real
-GitHub and additional host/platform acceptance remain listed in the regression matrix.
+## Lifecycle
 
-The source contract was inspected at Hermes commit
+Each conversation gets its own Node worker. Monitors stop when the conversation is finalized or reset, the plugin is
+unloaded, the host quits, or the worker fails. Finishing a turn does not stop them. Nothing survives a host restart,
+so ask Hermes to start monitors again afterwards.
+
+## Configuration
+
+Global settings come from `~/.config/pr-monitor/config.json`. Project settings are read from the conversation's
+working directory: `.pr-monitor.json`, then `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`.
+
+To merge ready PRs automatically, set `autoMerge: true` in the global file or a trusted project file. Project config
+overrides global config, and an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With
+auto-merge on, starting a monitor removes any ready label that is already there and asks the agent to reassess.
+Merged PRs get an `automatically-merged` label. Read
+[configuration and auto-merge safety](../docs/configuration.md#auto-merge) before turning it on.
+
+## Compatibility notes
+
+Hermes's public Python `inject_message` API does not cover Desktop/TUI yet. `desktop.py` is a small compatibility
+adapter over the live TUI gateway's session registry, transport binding, and synchronous background-turn admission.
+It checks that the live record belongs to the tool's conversation, never starts another gateway, and never resumes a
+closed chat. Hosts without these interfaces fail with a clear error. A model-driven smoke test passed through the
+Desktop gateway with simulated GitHub data. Real GitHub and further host and platform checks are tracked in the
+[regression matrix](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/regression/hermes.md).
+
+The contract was inspected at Hermes commit
 [`9a84bee265da`](https://github.com/NousResearch/hermes-agent/commit/9a84bee265daad14340a80d7585928cd8ea1f9eb).
-See [regression requirements](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/regression/hermes.md) for validation status and remaining host checks.
 
-Development: run `npm run build:hermes` from the repository root and commit the regenerated `hermes/dist/`
-and `hermes/skills/` alongside source changes. `npm test` includes the Python adapter contracts; Python 3.10+
-is required for development tests. Runtime Python comes from Hermes.
+## Development
+
+Run `npm run build:hermes` from the repository root and commit the regenerated `hermes/dist/` and `hermes/skills/`
+with your source changes. `npm test` includes the Python adapter contracts and needs Python 3.10+. At runtime, Python
+comes from Hermes.
