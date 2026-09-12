@@ -48,8 +48,9 @@ While a PR is not yet ready, the `Stop` hook may hand the agent the exact `claud
 command to run. That is the only waiting command the agent is allowed to use. Two settings control this fallback:
 `keepAliveMaxMinutes` caps how long it waits and `keepAlive: false` turns it off. Hosts with the socket ignore both.
 
-`desktopNotifications: true` is separate and works on every Claude Code version: it shows an OS notification
-whenever a report is delivered or queued.
+`desktopNotifications: true` is separate from the fallback and is not tied to the socket. It makes a best-effort
+attempt to show an OS notification whenever a report is delivered or queued, using `osascript` on macOS and
+`notify-send` on Linux. If that tool is missing or fails, nothing is shown and no error is reported.
 
 ### Lifecycle
 

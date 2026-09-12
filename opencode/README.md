@@ -1,7 +1,7 @@
 # @sesori/pr-monitor-opencode
 
-OpenCode plugin that watches your GitHub pull requests and posts `[PR Monitor]` status reports back into the session
-that opened them. It also manages the ready-for-human-review label.
+OpenCode plugin that watches your GitHub pull requests and posts `[PR Monitor]` status reports into the session that
+started the monitor. It also manages the ready-for-human-review label.
 
 ## Install
 

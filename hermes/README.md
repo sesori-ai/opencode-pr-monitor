@@ -1,7 +1,7 @@
 # PR Monitor for Hermes
 
-Watches your GitHub pull requests and posts `[PR Monitor]` status reports back into the Hermes conversation that
-opened them. It also manages the ready-for-human-review label.
+Watches your GitHub pull requests and posts `[PR Monitor]` status reports into the Hermes conversation that started
+the monitor. It also manages the ready-for-human-review label.
 
 ## Install
 

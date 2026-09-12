@@ -75,11 +75,11 @@ Every key with its default value:
 | `maxCiWaitMinutes` | `30` | How long a due report may wait for running CI to finish. |
 | `pollIntervalSeconds` | `60` | How often each PR is polled. Clamped between 30 seconds and 24 hours. |
 | `announceOnStart` | `true` | Send a full status report as soon as a monitor starts. |
-| `flushOnCiFailure` | `true` | Report the first CI failure on a commit right away instead of batching it. |
+| `flushOnCiFailure` | `true` | Report a newly failing check right away instead of batching it. |
 
-When `maxCiWaitMinutes` runs out, the report goes out anyway and names the checks still running. Once the first CI
-failure on a commit has been reported, later failures on the same commit ride along with the normal report instead
-of each sending their own.
+When `maxCiWaitMinutes` runs out, the report goes out anyway and names the checks still running. A check that newly
+fails is reported right away only once per commit. Later failures on the same commit ride along with the normal
+report instead of each sending their own.
 
 ### Feedback and readiness
 
@@ -87,7 +87,7 @@ of each sending their own.
 |---|---:|---|
 | `ignoreCommentTag` | `<!-- pr-monitor:reply -->` | The prefix every agent-written GitHub reply must start with. |
 | `readyLabel` | `ready-for-human-review` | The label added when a PR is ready and removed when it is not. |
-| `autoMerge` | `false` | Squash-merge the PR once it is ready. See [auto-merge](#auto-merge). |
+| `autoMerge` | `false` | Make one squash-merge attempt after PR Monitor marks the PR ready itself. See [auto-merge](#auto-merge). |
 
 The reply prefix has to be the very first text in a comment from the monitoring account. A comment without it
 counts as human feedback. Comments with it do not count as new activity, but they do count as proof that feedback

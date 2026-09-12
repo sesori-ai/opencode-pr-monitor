@@ -37,12 +37,14 @@ usually get one "here is what changed, and CI passed" message instead of two.
 
 Three things skip the timers and are reported at the next poll:
 
-- the first failing check on a commit, when `flushOnCiFailure` is on;
+- a check that newly fails, meaning one the monitor has not already seen failing on that commit, when
+  `flushOnCiFailure` is on;
 - a merge conflict that has just become definite; and
 - the PR merging or closing.
 
-Only the first CI failure on a commit is reported instantly. Later failures on the same commit ride along with the
-normal report.
+Only one such instant failure report is sent per commit. Later failures on the same commit ride along with the
+normal report. A check that was already failing when the monitor started is not new: it shows up in the startup
+report when `announceOnStart` is on, not as an instant alert.
 
 ## What a report contains
 

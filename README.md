@@ -2,7 +2,7 @@
 
 Your coding agent opens a pull request and moves on. PR Monitor keeps watching the PR for it: new commits, CI
 results, reviews, comments, merge conflicts, and the final merge or close. When something happens, a short
-`[PR Monitor]` message lands back in the same agent conversation so the agent can act on it.
+`[PR Monitor]` message lands in the agent conversation that started the monitor so the agent can act on it.
 
 Works with **OpenCode, Claude Code, Codex, Pi, Oh My Pi (OMP), and Hermes**.
 
