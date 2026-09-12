@@ -4,6 +4,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "noEmit": false,
+    "outDir": "./dist/types",
     "rootDir": ".."
   },
   "include": ["index.ts"]
