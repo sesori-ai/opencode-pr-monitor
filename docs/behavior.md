@@ -86,7 +86,7 @@ PR Monitor adds the ready label on its own when all three hold:
 
 A new commit, a relevant comment or review summary, an edited or deleted reply, a CI failure, or a conflict takes the
 label off again. Thread resolution, stale reviews, pending reviewers, draft status, and the PR being merged or closed
-do not on their own.
+do not take it off on their own.
 
 When a monitor starts, it notes an existing ready label but does not re-add one. The agent has to look at the first
 report and decide, including after a host restart. A PR that was already settled can be marked ready immediately,
@@ -105,8 +105,8 @@ PR clean again, the label comes back.
 - Ten report deliveries in a row failed: stops.
 - A single failed delivery keeps the old baseline, so the same activity is retried rather than lost. A failed first
   report is retried in full at the next poll.
-- The PR merged or closed: one final report ending in `Monitor stopped: PR merged` or `PR closed`, then the monitor
-  stops.
+- The PR merged or closed: one final report ending in `Monitor stopped: PR merged` or `Monitor stopped: PR closed`,
+  then the monitor stops.
 - Manual, lifecycle, and failure stops all use the same `Monitor stopped: <reason>` wording.
 
 Monitors live in memory and belong to the conversation that started them. They stop by themselves when the PR is

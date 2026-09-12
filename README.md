@@ -91,8 +91,9 @@ hermes plugins enable pr-monitor
 Restart Hermes afterwards. Node.js and the logged-in `gh` must be on the **backend's** `PATH`, not just your
 laptop's. If your profile restricts tools, enable the `pr-monitor` toolset.
 
-Background monitoring works in Hermes Desktop and TUI. The Hermes CLI, messaging gateways, and ACP clients can only
-use the manual ready and unready actions. Details are in the [Hermes README](hermes/README.md).
+Background monitoring works in Hermes Desktop and TUI with the default `dashboard.turn_isolation: false`. The
+Hermes CLI, messaging gateways, ACP clients, and Desktop with turn isolation switched on can only use the manual
+ready and unready actions. Details are in the [Hermes README](hermes/README.md).
 
 ### Check it works
 
@@ -124,11 +125,12 @@ worth knowing, a report like this appears in the conversation:
 - **Bad news travels fast.** A new CI failure, a merge conflict, or the PR merging or closing is reported at the
   next poll.
 - **Facts, not transcripts.** Reports name authors, counts, and statuses. They never quote comment bodies.
-- **Hands-off handoff.** When CI is green, the PR is mergeable, and the agent has replied to all feedback, PR Monitor
-  adds the `ready-for-human-review` label. New commits or feedback take it off again. Agent replies start with a
+- **Hands-off handoff.** When CI passes (or the repository has no CI), the PR is mergeable, and the agent has replied
+  to all feedback, PR Monitor adds the `ready-for-human-review` label. New commits or feedback take it off again. Agent replies start with a
   hidden `<!-- pr-monitor:reply -->` marker so the monitor can tell them apart from human comments.
-- **Optional auto-merge.** Off by default. When on, a ready PR gets one careful squash merge. Read
-  [auto-merge](docs/configuration.md#auto-merge) before turning it on.
+- **Optional auto-merge.** Off by default. When on, PR Monitor makes one careful squash-merge attempt after it
+  marks the PR ready itself, either automatically or through `mark_ready`. A ready label added by anyone else never
+  triggers a merge. Read [auto-merge](docs/configuration.md#auto-merge) before turning it on.
 - **Stops by itself** when the PR merges or closes.
 
 ## Tool actions

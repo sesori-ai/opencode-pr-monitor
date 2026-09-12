@@ -148,8 +148,8 @@ whose result is unclear.
 - **Fresh look at startup.** Starting a monitor with auto-merge on removes any ready label that is already there.
   The agent has to assess the PR again before `mark_ready` can lead to a merge.
 - **Same commit or no merge.** A standalone `mark_ready` notes the head commit before adding the label and checks
-  it again afterwards. If the commit changed or cannot be verified, the merge is cancelled and the label is taken
-  off again.
+  it again afterwards. If the commit changed or cannot be verified, the merge is cancelled and PR Monitor tries to
+  take the label off again. If that cleanup fails, the result says so and the label stays until you remove it.
 - **One exact merge.** The request is pinned to the accepted commit, always squashes, uses the PR title as the
   commit title, and sends an empty commit body.
 - **No blind retries.** If GitHub's answer is lost, times out, is malformed, or is a server error, PR Monitor asks

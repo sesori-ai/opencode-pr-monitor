@@ -26,8 +26,8 @@ report, mark its GitHub replies with the reply prefix so the monitor can recogni
 polling on its own. Your repositories do not need their own copy of the skill.
 
 Reports cover new commits, CI, reviews and comments, merge conflicts, and the PR merging or closing. Each one says
-whether the PR is ready for human review and never quotes comment bodies. When CI is green, the PR is mergeable, and
-all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
+whether the PR is ready for human review and never quotes comment bodies. When CI passes (or there is none), the PR is
+mergeable, and all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
 
 The monitor owns the waiting. Agents should not sleep, schedule checks, poll in the background, run `gh pr checks`
 repeatedly, or call `status` and `flush` in a loop. Reports arrive on their own.

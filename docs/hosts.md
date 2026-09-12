@@ -45,10 +45,11 @@ inject them:
 - `Stop` makes sure a pending report is not skipped.
 
 While a PR is not yet ready, the `Stop` hook may hand the agent the exact `claude-codex/hooks/await-activity.mjs`
-command to run. That is the only waiting command the agent is allowed to use. Three settings control this
-fallback: `keepAliveMaxMinutes` caps how long it waits, `keepAlive: false` turns it off, and
-`desktopNotifications: true` shows an OS notification when a report is queued. Hosts with the socket ignore all
-three.
+command to run. That is the only waiting command the agent is allowed to use. Two settings control this fallback:
+`keepAliveMaxMinutes` caps how long it waits and `keepAlive: false` turns it off. Hosts with the socket ignore both.
+
+`desktopNotifications: true` is separate and works on every Claude Code version: it shows an OS notification
+whenever a report is delivered or queued.
 
 ### Lifecycle
 

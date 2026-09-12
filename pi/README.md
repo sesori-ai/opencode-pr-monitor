@@ -30,8 +30,8 @@ instead of building its own wait loop.
 
 Reports cover new commits, CI, reviews and comments, merge conflicts, and the PR merging or closing. Each one says
 whether the PR is ready for human review and never quotes comment bodies. Reports are delivered through the host's
-native custom-message API and can start a turn when the agent is idle. When CI is green, the PR is mergeable, and
-all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
+native custom-message API and can start a turn when the agent is idle. When CI passes (or there is none), the PR is
+mergeable, and all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
 
 Monitors live in memory and belong to the active session. Pi clears them when the extension shuts down after a
 successful session new, resume, fork, or reload. OMP clears them after a successful session switch. A canceled
