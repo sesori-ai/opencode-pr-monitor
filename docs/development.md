@@ -20,6 +20,7 @@ session orchestration.
 | `skills/` | Canonical `monitor-pr` skill copied into push-host npm packages |
 | `opencode/` | OpenCode adapter and `@sesori/pr-monitor-opencode` workspace |
 | `pi/` | Shared Pi/OMP adapter and `@sesori/pr-monitor-pi` workspace |
+| `deepseek/` | DeepSeek Harness Cordis adapter and `@sesori/pr-monitor-deepseek` workspace |
 | `claude-codex/` | Shared Claude Code/Codex Git-plugin root, hooks, commands, and MCP server |
 | `hermes/` | Hermes Python plugin, Desktop compatibility seam, bundled Node worker, and skill |
 | `.claude-plugin/` | Root Claude marketplace pointing to `claude-codex/` |
@@ -38,9 +39,9 @@ npm test             # core, runtime, and adapter regression tests
 npm run typecheck    # core + runtime + all TypeScript adapters
 npm run build        # all host artifacts
 npm run version:check
-npm run pack:check   # inspect, install, and import both npm tarballs
-npm run host:check   # Pi and OMP real-loader checks
-npm run clean        # remove ephemeral OpenCode/Pi output
+npm run pack:check   # inspect, install, and import all three npm tarballs
+npm run host:check   # Pi/OMP loaders; DeepSeek profile checks plus macOS/Linux Agent probe
+npm run clean        # remove ephemeral OpenCode/Pi/DeepSeek output
 npm run release:check
 ```
 
@@ -49,25 +50,28 @@ Current-host checks can also run independently:
 ```sh
 OPENCODE_CLI="$(command -v opencode)" npm run host:check:opencode
 OMP_VERSION=18.0.4 npm run host:check:omp
+DEEPSEEK_VERSION=0.1.5-rc.2 npm run host:check:deepseek
 ```
 
-Use the current supported OMP version when it changes.
+Use the current supported OMP and DeepSeek Harness versions when they change.
 
 ## Build artifacts
 
-- OpenCode and Pi/OMP publish bundles in `opencode/dist/` and `pi/dist/`. They embed private `core/` and `runtime/`
-  code and remain uncommitted.
+- OpenCode, Pi/OMP, and DeepSeek Harness publish bundles in `opencode/dist/`, `pi/dist/`, and `deepseek/dist/`.
+  They embed private `core/` and `runtime/` code and remain uncommitted.
 - `claude-codex/dist/mcp-server.mjs` is committed because Git-plugin installation runs no build step. Rebuild and
   commit it after changing `claude-codex/src/`, `runtime/`, or `core/`.
 - `hermes/dist/worker.mjs`, `hermes/dist/tool.json`, and copied Hermes skill output are committed. Run
   `npm run build:hermes` after changing Hermes, runtime, core, tool schema, or canonical skill behavior.
 - `claude-codex/hooks/drain-spool.mjs` and `await-activity.mjs` ship as dependency-free source files. Keep their
   routing and state formats aligned with `claude-codex/src/spool.ts` and `session-state.ts`.
-- Never commit generated OpenCode/Pi distribution or copied package skill output.
+- Never commit generated OpenCode/Pi/DeepSeek distribution or copied package skill output.
 
 The OpenCode entry must keep one export because its loader invokes every export. Pi host imports remain external;
-the package manifest owns skill discovery. Claude Code and Codex share one plugin root but use separate manifests.
-Hermes Python owns conversation binding while its bundled Node worker owns monitor behavior.
+the package manifest owns skill discovery. DeepSeek host imports also remain external; its package declares a
+`dsh.bundle.patch`, registers the skill at `BUNDLED_SKILL_RANK`, and scopes one tool/runtime to each root Agent.
+Claude Code and Codex share one plugin root but use separate manifests. Hermes Python owns conversation binding
+while its bundled Node worker owns monitor behavior.
 
 ## Local plugin checks
 
@@ -95,6 +99,8 @@ delivery, packaging, or host compatibility changes.
 - [`plugin-installation.md`](regression/plugin-installation.md) covers npm/Git artifacts, host floors, skill
   discovery, loader compatibility, and lockstep release metadata.
 - [`hermes.md`](regression/hermes.md) covers Hermes delivery, lifecycle, worker packaging, and actual-host evidence.
+- [`deepseek.md`](regression/deepseek.md) covers Cordis activation, root-Agent delivery, lifecycle, skill registration,
+  global-only configuration, and actual-host evidence.
 
 The catalogs distinguish automated, adapter, actual-host, and packaged/external proof. A source import does not prove
 a packed artifact; a fake adapter does not prove host compatibility.
@@ -105,6 +111,7 @@ One version spans:
 
 - `@sesori/pr-monitor-opencode` on npm;
 - `@sesori/pr-monitor-pi` on npm;
+- `@sesori/pr-monitor-deepseek` on npm;
 - Claude Code and Codex plugin manifests;
 - Hermes plugin metadata and worker; and
 - annotated Git tag `vX.Y.Z` for Git-plugin distribution.
@@ -135,11 +142,11 @@ Without a version, `make publish` prompts. The target stops at the first failure
 2. version updates, CHANGELOG cut, committed bundles, and `Release vX.Y.Z` commit;
 3. full tests, types, builds, packs, and host-loader checks;
 4. push of `main`;
-5. publication of both npm packages;
+5. publication of all three npm packages;
 6. registry propagation verification; then
 7. annotated tag creation and push.
 
-Both npm packages are published and verified before the Git tag. npm versions are immutable, so never retry a
+All three npm packages are published and verified before the Git tag. npm versions are immutable, so never retry a
 changed tarball under the same version.
 
 `make bump X.Y.Z` performs only the version, changelog, build, and release-commit step on the current branch.
@@ -161,8 +168,10 @@ Then preserve publish order:
 ```sh
 npm publish --workspace @sesori/pr-monitor-opencode --access public
 npm publish --workspace @sesori/pr-monitor-pi --access public
+npm publish --workspace @sesori/pr-monitor-deepseek --access public
 npm view @sesori/pr-monitor-opencode@X.Y.Z version
 npm view @sesori/pr-monitor-pi@X.Y.Z version
+npm view @sesori/pr-monitor-deepseek@X.Y.Z version
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```

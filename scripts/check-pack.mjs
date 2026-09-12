@@ -148,7 +148,8 @@ try {
   const canonicalSkill = await readFile(new URL("../skills/monitor-pr/SKILL.md", import.meta.url), "utf8")
   const openCodeSkill = await readFile(new URL("../opencode/skills/monitor-pr/SKILL.md", import.meta.url), "utf8")
   const piSkill = await readFile(new URL("../pi/skills/monitor-pr/SKILL.md", import.meta.url), "utf8")
-  if (openCodeSkill !== canonicalSkill || piSkill !== canonicalSkill) {
+  const deepSeekSkill = await readFile(new URL("../deepseek/skills/monitor-pr/SKILL.md", import.meta.url), "utf8")
+  if (openCodeSkill !== canonicalSkill || piSkill !== canonicalSkill || deepSeekSkill !== canonicalSkill) {
     throw new Error("generated package skills have drifted from skills/monitor-pr/SKILL.md")
   }
   const piConsumer = await installConsumer({
@@ -190,8 +191,72 @@ try {
     { cwd: process.cwd(), stdio: "pipe" },
   )
 
+  const deepSeek = packWorkspace({
+    workspace: "@sesori/pr-monitor-deepseek",
+    destination: temporaryDirectory,
+  })
+  assertFiles({
+    metadata: deepSeek,
+    name: "DeepSeek Harness",
+    expected: [
+      "LICENSE",
+      "README.md",
+      "cordis.patch.yml",
+      "dist/index.d.ts",
+      "dist/index.js",
+      "package.json",
+      "skills/monitor-pr/SKILL.md",
+    ],
+  })
+  await assertLicense({ packageDirectory: "deepseek" })
+  const deepSeekConsumer = await installConsumer({
+    name: "deepseek",
+    metadata: deepSeek,
+    dependencies: [
+      "@deepseek-ai/cordis@4.0.2",
+      "@deepseek-ai/dsh-agent@0.1.5-rc.2",
+      "@deepseek-ai/dsh-launch-environment@0.1.5-rc.2",
+      "@deepseek-ai/dsh-llm@0.1.5-rc.2",
+      "@deepseek-ai/dsh-skill@0.1.5-rc.2",
+      "@deepseek-ai/dsh-tools@0.1.5-rc.2",
+    ],
+    smoke:
+      'const plugin = await import("@sesori/pr-monitor-deepseek");' +
+      'const {createRequire} = await import("node:module");' +
+      'const {readFileSync} = await import("node:fs");' +
+      'const require = createRequire(import.meta.url);' +
+      'const manifest = require("@sesori/pr-monitor-deepseek/package.json");' +
+      'const patch = readFileSync(require.resolve("@sesori/pr-monitor-deepseek/cordis.patch.yml"), "utf8");' +
+      'if (Object.keys(plugin).sort().join() !== "apply,inject,name") process.exit(1);' +
+      'if (manifest.dsh?.bundle?.patch !== "./cordis.patch.yml") process.exit(1);' +
+      'if (!patch.includes("name: \'@sesori/pr-monitor-deepseek\'")) process.exit(1);',
+  })
+  await writeFile(
+    join(deepSeekConsumer, "index.ts"),
+    'import type { Context } from "@deepseek-ai/cordis"\n' +
+      'import { apply, inject, name } from "@sesori/pr-monitor-deepseek"\n' +
+      "const plugin: (ctx: Context) => void = apply\nvoid plugin\nvoid inject\nvoid name\n",
+  )
+  execFileSync(
+    process.execPath,
+    [
+      resolve("node_modules/typescript/bin/tsc"),
+      "--noEmit",
+      "--module",
+      "NodeNext",
+      "--moduleResolution",
+      "NodeNext",
+      "--target",
+      "ES2022",
+      "--skipLibCheck",
+      join(deepSeekConsumer, "index.ts"),
+    ],
+    { cwd: process.cwd(), stdio: "pipe" },
+  )
+
   console.log(
-    `pack check passed: ${openCode.filename} and ${pi.filename}; exact files, skills, types, and exports`,
+    `pack check passed: ${openCode.filename}, ${pi.filename}, and ${deepSeek.filename}; ` +
+      "exact files, skills, types, exports, and DeepSeek bundle metadata",
   )
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true })

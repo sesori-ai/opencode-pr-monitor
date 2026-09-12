@@ -25,9 +25,12 @@ relative `XDG_CONFIG_HOME` is ignored.
 | Codex | `.pr-monitor.json`, then `.codex/pr-monitor.json`, then `.opencode/pr-monitor.json` |
 | Pi | `.pr-monitor.json`, then `.pi/pr-monitor.json`, then `.opencode/pr-monitor.json` |
 | OMP | `.pr-monitor.json`, then `.omp/pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| DeepSeek Harness | Not loaded; user-global configuration only |
 | Hermes | `.pr-monitor.json`, then `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json` |
 
-Pi and OMP only read project files once you have trusted the project. Global config is always read.
+Pi and OMP only read project files once you have trusted the project. Global config is always read. DeepSeek
+Harness exposes no project-trust signal to Cordis plugins, so it ignores every repository config path and
+invoking-project `.env` value.
 
 ### How settings combine
 
@@ -38,14 +41,17 @@ Later layers override earlier ones:
 3. the first project file that parses; and
 4. the `SESORI_PR_MONITOR_AUTO_MERGE` environment variable, which affects `autoMerge` only.
 
+DeepSeek Harness skips the project layer. It resolves its global config root and auto-merge override from the
+immutable launch-provenance snapshot, accepting only inherited-process or Harness-home user values.
+
 A project file only replaces the keys it sets. Unknown keys are ignored. An invalid value keeps the value from the
 layer below. A file that is not valid JSON is logged and skipped, and the next candidate is tried.
 
 Settings are read each time a monitor starts or a standalone ready action runs. A monitor that is already running
 keeps the settings it started with.
 
-> A project file can turn on auto-merge. In a repository you do not trust, check its config before starting a
-> monitor with a GitHub account that is allowed to merge.
+> A project file can turn on auto-merge on hosts that load it. In a repository you do not trust, check its config
+> before starting a monitor with a GitHub account that is allowed to merge. DeepSeek Harness never loads it.
 
 ## All settings
 
@@ -111,7 +117,7 @@ turns. Codex and socketless Claude Code sessions use them as described in the [h
 > **Merging cannot be undone.** Turn auto-merge on only in your personal config or in a repository you trust, using
 > a GitHub account that is meant to merge that repository's pull requests.
 
-Turn it on in the global or a project file:
+Turn it on in the global file or, outside DeepSeek Harness, a project file:
 
 ```json
 {
@@ -119,7 +125,8 @@ Turn it on in the global or a project file:
 }
 ```
 
-Or with an environment variable, which wins over both files:
+Or with an environment variable, which wins over both files. DeepSeek Harness accepts this value only from the
+inherited process or Harness-home user environment, never the invoking project's `.env`:
 
 - `true` or `1` turns it on;
 - `false`, `0`, or an empty value turns it off; and

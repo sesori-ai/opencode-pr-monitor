@@ -1,0 +1,4 @@
+# Install one conversation-scoped PR Monitor tool and its bundled workflow skill.
+- insert:
+    - id: pr-monitor
+      name: '@sesori/pr-monitor-deepseek'
