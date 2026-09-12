@@ -43,23 +43,23 @@ replacement or reload. OMP clears them after its successful session-switch
 event. Canceled transitions leave the current monitor untouched. Neither host
 restores monitors after process restart.
 
-Set `SESORI_PR_MONITOR_AUTO_MERGE=true` in Pi/OMP's process environment to make automatic readiness and
-`mark_ready` perform one head-fenced, title-only squash merge. This irreversible switch is environment-only;
-repository config cannot enable it. With it enabled, monitor startup removes any pre-existing ready label and
-requires fresh assessment. Successful merges get a dynamically created `automatically-merged` label. See the root
-README for failure behavior and setup details.
+Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
+readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
+an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
+removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
+`automatically-merged` label. See the root README for failure behavior and setup details.
 
 ## Configuration
 
-A trusted project uses repository `.pr-monitor.json`, then
-`${CONFIG_DIR_NAME}/pr-monitor.json` (`.pi` in Pi and `.omp` in OMP), then
+Global `~/.config/pr-monitor/config.json` supplies defaults. A trusted project then uses repository
+`.pr-monitor.json`, `${CONFIG_DIR_NAME}/pr-monitor.json` (`.pi` in Pi and `.omp` in OMP), then
 `.opencode/pr-monitor.json`. Pi ignores all project-local monitor config until
 the project is trusted. Available settings:
 
 - `debounceMinutes`, `maxCiWaitMinutes`, and `pollIntervalSeconds`
 - `ignoreCommentTag` (mandatory agent-reply prefix; default `<!-- pr-monitor:reply -->`)
 - `announceOnStart` and `flushOnCiFailure`
-- `readyLabel`
+- `readyLabel` and `autoMerge`
 
 See the [repository README](https://github.com/sesori-ai/pr-monitor-plugin#readme)
 for action semantics, defaults, and development/release instructions. Durable behavior and artifact checks are in

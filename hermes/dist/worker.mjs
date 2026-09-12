@@ -1,9 +1,11 @@
 // hermes/src/worker.ts
 import { createInterface } from "node:readline";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute as isAbsolute2, resolve } from "node:path";
 
 // core/config.ts
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 var AUTO_MERGE_ENV = "SESORI_PR_MONITOR_AUTO_MERGE";
 var DEFAULT_MONITOR_CONFIG = {
   debounceMinutes: 2,
@@ -17,22 +19,31 @@ var DEFAULT_MONITOR_CONFIG = {
 };
 var MIN_POLL_INTERVAL_SECONDS = 30;
 var MAX_POLL_INTERVAL_SECONDS = 86400;
+function globalMonitorConfigPath({
+  environment = process.env,
+  homeDirectory
+} = {}) {
+  const xdgConfigHome = environment["XDG_CONFIG_HOME"]?.trim();
+  const environmentHome = environment["HOME"]?.trim() || environment["USERPROFILE"]?.trim();
+  const home = homeDirectory ?? environmentHome ?? homedir();
+  const configHome = xdgConfigHome !== void 0 && isAbsolute(xdgConfigHome) ? xdgConfigHome : join(home, ".config");
+  return join(configHome, "pr-monitor", "config.json");
+}
 function positiveNumber(record, key) {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
 }
-function autoMergeEnabled(environment, log) {
+function environmentAutoMergeOverride(environment, log) {
   const raw = environment[AUTO_MERGE_ENV];
-  if (raw === void 0) return false;
+  if (raw === void 0) return void 0;
   const value = raw.trim().toLowerCase();
   if (value === "true" || value === "1") return true;
   if (value === "false" || value === "0" || value === "") return false;
-  log(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge remains disabled.`);
+  log(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge is disabled.`);
   return false;
 }
-function resolveMonitorConfig(raw, environment, log) {
-  const config = { ...DEFAULT_MONITOR_CONFIG, autoMerge: autoMergeEnabled(environment, log) };
-  if (typeof raw !== "object" || raw === null) return config;
+function applyMonitorConfig(config, raw) {
+  if (typeof raw !== "object" || raw === null) return;
   const record = raw;
   config.debounceMinutes = positiveNumber(record, "debounceMinutes") ?? config.debounceMinutes;
   config.maxCiWaitMinutes = positiveNumber(record, "maxCiWaitMinutes") ?? config.maxCiWaitMinutes;
@@ -46,13 +57,18 @@ function resolveMonitorConfig(raw, environment, log) {
   if (typeof flushOnCiFailure === "boolean") config.flushOnCiFailure = flushOnCiFailure;
   const label = record["readyLabel"];
   if (typeof label === "string" && label.length > 0) config.readyLabel = label;
+  const autoMerge = record["autoMerge"];
+  if (typeof autoMerge === "boolean") config.autoMerge = autoMerge;
+}
+function resolveMonitorConfig(layers, environment, log) {
+  const config = { ...DEFAULT_MONITOR_CONFIG };
+  for (const raw of layers) applyMonitorConfig(config, raw);
+  config.autoMerge = environmentAutoMergeOverride(environment, log) ?? config.autoMerge;
   return config;
 }
-async function loadResolvedConfig({
+async function readFirstConfig({
   paths,
-  log,
-  environment = process.env,
-  resolve: resolve2
+  log
 }) {
   for (const path of paths) {
     let text;
@@ -62,12 +78,29 @@ async function loadResolvedConfig({
       continue;
     }
     try {
-      return resolve2(JSON.parse(text), environment, log);
+      return { found: true, raw: JSON.parse(text) };
     } catch (error) {
       log(`config file ${path} is not valid JSON, ignoring it: ${error.message}`);
     }
   }
-  return resolve2(void 0, environment, log);
+  return { found: false };
+}
+async function loadResolvedConfig({
+  paths,
+  globalPaths,
+  log,
+  environment = process.env,
+  resolve: resolve2
+}) {
+  const global = await readFirstConfig({
+    paths: globalPaths ?? [globalMonitorConfigPath({ environment })],
+    log
+  });
+  const project = await readFirstConfig({ paths, log });
+  const layers = [];
+  if (global.found) layers.push(global.raw);
+  if (project.found) layers.push(project.raw);
+  return resolve2(layers, environment, log);
 }
 function loadMonitorConfig(input) {
   return loadResolvedConfig({ ...input, resolve: resolveMonitorConfig });
@@ -816,14 +849,14 @@ function buildReadinessLines({
   readyLabel,
   replyPrefix,
   readinessError,
-  autoMergeEnabled: autoMergeEnabled2 = false,
+  autoMergeEnabled = false,
   autoMergeNotice
 }) {
   const ready = hasReadyLabel(snapshot, readyLabel);
   const lines = [
     ready ? `- Ready for human review: YES \u2014 label "${readyLabel}" is present.` : `- Ready for human review: NO \u2014 label "${readyLabel}" is absent.`
   ];
-  if (autoMergeEnabled2) {
+  if (autoMergeEnabled) {
     lines.push(
       "- Auto-merge: ENABLED \u2014 automatic readiness and mark_ready make one squash-merge attempt for the accepted head; the squash commit uses only the PR title."
     );
@@ -1491,7 +1524,7 @@ function buildMonitorToolDescription({
   lifecycle,
   waiting
 }) {
-  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With SESORI_PR_MONITOR_AUTO_MERGE=true, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Tuning lives in ${configPath}. ${lifecycle}`;
+  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when autoMerge is enabled by trusted config or SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE environment value overrides autoMerge config. ${lifecycle}`;
 }
 
 // runtime/monitor-session.ts
@@ -1632,7 +1665,7 @@ ${raced.watch.statusLine()}` };
         };
       }
       initial = withReadyLabel(initial, config.readyLabel, false);
-      startupNotice = `pre-existing ready label "${config.readyLabel}" was removed because ${AUTO_MERGE_ENV}=true. Reassess the current head and call mark_ready if it is ready; that action will squash-merge it.`;
+      startupNotice = `pre-existing ready label "${config.readyLabel}" was removed because auto-merge is enabled. Reassess the current head and call mark_ready if it is ready; that action will try to squash-merge it.`;
       if (this.lifecycleGeneration !== lifecycleGeneration) {
         return {
           text: `Monitor session ended while ${displayKey} was starting. ${startupNotice} No active monitor remains.`
@@ -1705,7 +1738,7 @@ ${resetRace.watch.statusLine()}` };
       void watch.initializeReadiness();
     }
     this.deps.log(`started monitoring ${displayKey}`);
-    const autoMergeNotice = config.autoMerge ? ` ${AUTO_MERGE_ENV}=true: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title.` : "";
+    const autoMergeNotice = config.autoMerge ? " Auto-merge enabled: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title." : "";
     const resetNotice = startupNotice === void 0 ? "" : ` Startup safety reset: ${startupNotice}`;
     return {
       text: `Started monitoring ${displayKey} \u2014 "${initial.title}".${autoMergeNotice}${resetNotice}`,
@@ -1904,7 +1937,7 @@ if (process.argv.includes("--describe")) {
     }
     if (message.type !== "command" || closed) return;
     const id = message.id;
-    if (!MONITOR_ACTION_VALUES.includes(message.action) || message.pr !== void 0 && typeof message.pr !== "string" || typeof message.cwd !== "string" || !isAbsolute(message.cwd)) {
+    if (!MONITOR_ACTION_VALUES.includes(message.action) || message.pr !== void 0 && typeof message.pr !== "string" || typeof message.cwd !== "string" || !isAbsolute2(message.cwd)) {
       send({ type: "result", id, error: "Invalid monitor action or PR" });
       return;
     }

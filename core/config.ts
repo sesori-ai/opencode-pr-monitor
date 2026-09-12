@@ -1,8 +1,10 @@
-// Monitor tuning, loaded from the first readable `pr-monitor.json` among the
-// candidate paths supplied by the host. Common watch/action settings are kept
-// separate from Claude Code's passive-delivery settings.
+// Monitor tuning, layered from one user-global file and the first readable
+// project `pr-monitor.json` among host-supplied candidates. Common watch/action
+// settings remain separate from Claude Code's passive-delivery settings.
 
 import { readFile } from "node:fs/promises"
+import { homedir } from "node:os"
+import { isAbsolute, join } from "node:path"
 
 export type WatchConfig = {
   debounceMinutes: number
@@ -18,7 +20,7 @@ export type WatchConfig = {
 export type MonitorConfig = WatchConfig & {
   // Label the mark_ready action applies to a PR on GitHub.
   readyLabel: string
-  // Host-controlled, environment-only opt-in. Never read this from repository config.
+  // Irreversible auto-merge opt-in from trusted config or an explicit environment override.
   autoMerge: boolean
 }
 
@@ -59,9 +61,35 @@ type MonitorEnvironment = Readonly<Record<string, string | undefined>>
 
 type LoadConfigInput<TConfig> = {
   paths: readonly string[]
+  globalPaths?: readonly string[]
   log: (message: string) => void
   environment?: MonitorEnvironment
-  resolve: (raw: unknown, environment: MonitorEnvironment, log: (message: string) => void) => TConfig
+  resolve: (
+    layers: readonly unknown[],
+    environment: MonitorEnvironment,
+    log: (message: string) => void,
+  ) => TConfig
+}
+
+type LoadedConfig = {
+  found: boolean
+  raw?: unknown
+}
+
+export function globalMonitorConfigPath({
+  environment = process.env,
+  homeDirectory,
+}: {
+  environment?: MonitorEnvironment
+  homeDirectory?: string
+} = {}): string {
+  const xdgConfigHome = environment["XDG_CONFIG_HOME"]?.trim()
+  const environmentHome = environment["HOME"]?.trim() || environment["USERPROFILE"]?.trim()
+  const home = homeDirectory ?? environmentHome ?? homedir()
+  const configHome = xdgConfigHome !== undefined && isAbsolute(xdgConfigHome)
+    ? xdgConfigHome
+    : join(home, ".config")
+  return join(configHome, "pr-monitor", "config.json")
 }
 
 function positiveNumber(record: Record<string, unknown>, key: string): number | undefined {
@@ -69,23 +97,21 @@ function positiveNumber(record: Record<string, unknown>, key: string): number | 
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
-function autoMergeEnabled(environment: MonitorEnvironment, log: (message: string) => void): boolean {
+function environmentAutoMergeOverride(
+  environment: MonitorEnvironment,
+  log: (message: string) => void,
+): boolean | undefined {
   const raw = environment[AUTO_MERGE_ENV]
-  if (raw === undefined) return false
+  if (raw === undefined) return undefined
   const value = raw.trim().toLowerCase()
   if (value === "true" || value === "1") return true
   if (value === "false" || value === "0" || value === "") return false
-  log(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge remains disabled.`)
+  log(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge is disabled.`)
   return false
 }
 
-function resolveMonitorConfig(
-  raw: unknown,
-  environment: MonitorEnvironment,
-  log: (message: string) => void,
-): MonitorConfig {
-  const config = { ...DEFAULT_MONITOR_CONFIG, autoMerge: autoMergeEnabled(environment, log) }
-  if (typeof raw !== "object" || raw === null) return config
+function applyMonitorConfig(config: MonitorConfig, raw: unknown): void {
+  if (typeof raw !== "object" || raw === null) return
   const record = raw as Record<string, unknown>
 
   config.debounceMinutes = positiveNumber(record, "debounceMinutes") ?? config.debounceMinutes
@@ -101,16 +127,23 @@ function resolveMonitorConfig(
   if (typeof flushOnCiFailure === "boolean") config.flushOnCiFailure = flushOnCiFailure
   const label = record["readyLabel"]
   if (typeof label === "string" && label.length > 0) config.readyLabel = label
+  const autoMerge = record["autoMerge"]
+  if (typeof autoMerge === "boolean") config.autoMerge = autoMerge
+}
+
+function resolveMonitorConfig(
+  layers: readonly unknown[],
+  environment: MonitorEnvironment,
+  log: (message: string) => void,
+): MonitorConfig {
+  const config = { ...DEFAULT_MONITOR_CONFIG }
+  for (const raw of layers) applyMonitorConfig(config, raw)
+  config.autoMerge = environmentAutoMergeOverride(environment, log) ?? config.autoMerge
   return config
 }
 
-function resolveClaudeConfig(
-  raw: unknown,
-  environment: MonitorEnvironment,
-  log: (message: string) => void,
-): ClaudeMonitorConfig {
-  const config: ClaudeMonitorConfig = { ...resolveMonitorConfig(raw, environment, log), ...DEFAULT_CLAUDE_CONFIG }
-  if (typeof raw !== "object" || raw === null) return config
+function applyClaudeConfig(config: ClaudeMonitorConfig, raw: unknown): void {
+  if (typeof raw !== "object" || raw === null) return
   const record = raw as Record<string, unknown>
 
   const notify = record["desktopNotifications"]
@@ -118,15 +151,25 @@ function resolveClaudeConfig(
   const keepAlive = record["keepAlive"]
   if (typeof keepAlive === "boolean") config.keepAlive = keepAlive
   config.keepAliveMaxMinutes = positiveNumber(record, "keepAliveMaxMinutes") ?? config.keepAliveMaxMinutes
+}
+
+function resolveClaudeConfig(
+  layers: readonly unknown[],
+  environment: MonitorEnvironment,
+  log: (message: string) => void,
+): ClaudeMonitorConfig {
+  const config: ClaudeMonitorConfig = { ...resolveMonitorConfig(layers, environment, log), ...DEFAULT_CLAUDE_CONFIG }
+  for (const raw of layers) applyClaudeConfig(config, raw)
   return config
 }
 
-async function loadResolvedConfig<TConfig>({
+async function readFirstConfig({
   paths,
   log,
-  environment = process.env,
-  resolve,
-}: LoadConfigInput<TConfig>): Promise<TConfig> {
+}: {
+  paths: readonly string[]
+  log: (message: string) => void
+}): Promise<LoadedConfig> {
   for (const path of paths) {
     let text: string
     try {
@@ -135,12 +178,30 @@ async function loadResolvedConfig<TConfig>({
       continue
     }
     try {
-      return resolve(JSON.parse(text), environment, log)
+      return { found: true, raw: JSON.parse(text) }
     } catch (error) {
       log(`config file ${path} is not valid JSON, ignoring it: ${(error as Error).message}`)
     }
   }
-  return resolve(undefined, environment, log)
+  return { found: false }
+}
+
+async function loadResolvedConfig<TConfig>({
+  paths,
+  globalPaths,
+  log,
+  environment = process.env,
+  resolve,
+}: LoadConfigInput<TConfig>): Promise<TConfig> {
+  const global = await readFirstConfig({
+    paths: globalPaths ?? [globalMonitorConfigPath({ environment })],
+    log,
+  })
+  const project = await readFirstConfig({ paths, log })
+  const layers: unknown[] = []
+  if (global.found) layers.push(global.raw)
+  if (project.found) layers.push(project.raw)
+  return resolve(layers, environment, log)
 }
 
 export function loadMonitorConfig(input: Omit<LoadConfigInput<MonitorConfig>, "resolve">): Promise<MonitorConfig> {

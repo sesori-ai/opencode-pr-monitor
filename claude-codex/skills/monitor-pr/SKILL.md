@@ -1,7 +1,7 @@
 ---
 name: monitor-pr
 description: >-
-  Drive a GitHub PR to ready-for-human-review or environment-gated auto-merge
+  Drive a GitHub PR to ready-for-human-review or opt-in auto-merge
   without supervision. Start pr_monitor immediately after opening a PR and act
   on every automatic report;
   the monitor owns polling, delivery, and readiness labels — reports arrive on
@@ -13,7 +13,7 @@ description: >-
 
 # monitor-pr
 
-Own a PR from creation through handoff or environment-gated auto-merge. The monitor polls GitHub, delivers
+Own a PR from creation through handoff or opt-in auto-merge. The monitor polls GitHub, delivers
 reports, and automatically adds or withdraws the configured ready label. The
 agent judges the substance of feedback and may manually accept non-actionable
 activity without creating bot acknowledgement loops.
@@ -51,7 +51,7 @@ GitHub account; an unprefixed local-account comment is therefore human feedback.
 ## Assess the initial report, including after a restart
 
 Startup normally observes the existing label without automatically adding it.
-When the report says environment auto-merge is enabled, startup instead removes
+When the report says auto-merge is enabled, startup instead removes
 a pre-existing ready label as a safety reset. The start result and, when startup
 announcements are enabled, initial report identify that reset. Treat the initial
 PR state as actionable, reassess the current head, and call `mark_ready` again

@@ -68,11 +68,13 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   work or use `mark_ready` when judgment says no action remains. Terminal reports preserve the label and omit that
   work instruction.
 
-### Environment-gated auto-merge
+### Config- and environment-gated auto-merge
 
-- `SESORI_PR_MONITOR_AUTO_MERGE=true` or `1` enables auto-merge from the host process environment. Unset, `false`,
-  `0`, and empty values disable it; any other value fails closed with a warning. Repository configuration cannot
-  enable it.
+- `autoMerge: true` may enable auto-merge in user-global or trusted project config. Global config is
+  `~/.config/pr-monitor/config.json`, or `$XDG_CONFIG_HOME/pr-monitor/config.json` when that environment variable is
+  an absolute path. Project config overrides global config.
+- An explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE` overrides both config layers: `true`/`1` enables and
+  `false`/`0`/empty disables. Any other value fails closed, disables auto-merge, and logs a warning.
 - Only successfully completed readiness transitions performed by the monitor and successful `mark_ready` actions
   trigger one merge attempt. Observing an externally added ready label does not; neither does observing readiness
   after a failed/ambiguous label mutation. Both watched and standalone `mark_ready` are covered.
@@ -83,7 +85,7 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 - A rejected merge leaves readiness present, reports that no automatic retry will occur, and does not retry while
   that readiness state stays unchanged. A later readiness transition or explicit `mark_ready` is a new attempt.
 - Reports, start results, status, tool wording, commands, and shipped skills expose enabled state and its irreversible
-  consequence. Every host uses the same core/runtime implementation and the environment inherited by its process.
+  consequence. Every host uses the same layered config resolver and core/runtime implementation.
 
 ### Startup and restart assessment
 
@@ -183,36 +185,39 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 
 ## Configuration Matrix
 
-All hosts prefer repository `.pr-monitor.json`. Remaining candidates are evaluated in this order:
+All hosts apply defaults, then user-global `~/.config/pr-monitor/config.json` (or an absolute XDG override), then
+its first readable project candidate. Every host prefers repository `.pr-monitor.json`; remaining candidates are:
 
 - OpenCode: project/worktree `.opencode/pr-monitor.json` fallbacks.
 - Claude Code: `.claude/pr-monitor.json`, then `.opencode/pr-monitor.json`.
+- Hermes: `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 - Trusted Pi and OMP: `${CONFIG_DIR_NAME}/pr-monitor.json`, then `.opencode/pr-monitor.json`.
-- Untrusted Pi: defaults only; no project-local monitor file is read.
+- Untrusted Pi: defaults plus user-global config; no project-local monitor file is read.
 
 Pi and OMP select config candidates from each `start` and standalone ready action's current cwd/trust context;
 creating the session runtime with an earlier `status` call must not pin a different project. OpenCode and Claude
 reread adapter-lifetime candidates for starts and standalone actions. Ready actions for an active watch use that
 watch's captured label/prefix so automation and manual override cannot target different labels. An active watch keeps
-its start-time config. Loading is permissive: first readable valid JSON wins, unknown keys and invalid values fall
-back independently, and invalid JSON is logged before the next candidate/defaults are used. `ignoreCommentTag`
-defaults to
-`<!-- pr-monitor:reply -->` and matches only at the beginning of a local-account comment. Auto-merge is resolved
-fresh from the host environment at each config load and cannot be enabled by any of these project files.
+its start-time config. Loading is permissive: the first readable valid project JSON wins, unknown keys are ignored,
+and invalid values leave the lower global/default layer unchanged. Invalid JSON is logged before the next candidate
+is tried. `ignoreCommentTag` defaults to `<!-- pr-monitor:reply -->` and matches only at the beginning of a
+local-account comment. An explicitly defined auto-merge environment value is resolved fresh at each config load and
+overrides both JSON layers.
 
 ## Regression Levels
 
 - **L1 Smoke:** Core/runtime and every adapter load; one tool and one skill are visible per host; a fake open PR can
   start, report, and stop.
 - **L2 Routine:** Automated activity/readiness, acknowledgement ordering, same-account follow-ups,
-  debounce/hold/urgency, report baselines, mutation/delivery retry, environment parsing, head-fenced title-only
-  auto-merge calls, startup reset, actions, races, and timer cleanup on Node 22 across Linux, macOS, and Windows.
+  debounce/hold/urgency, report baselines, mutation/delivery retry, global/project/environment config layering,
+  head-fenced title-only auto-merge calls, startup reset, actions, races, and timer cleanup on Node 22 across Linux,
+  macOS, and Windows.
 - **L3 Release:** Shared-session adapter contracts represent OpenCode, Claude, Pi, and OMP. Packed OpenCode plus
   bundled Claude checks cover owning-session delivery, reload/process lifecycle, spool/hook injection, and handoff.
 - **L4 Extended:** Actual minimum and current Pi/OMP loaders, busy/idle steering, trust/config paths, successful and
   canceled transitions, and required OS rows.
 - **L5 Full:** Packaged hosts against an authenticated disposable GitHub PR: initial/ordinary/urgent/terminal
-  reports, handoff/withdrawal, environment-enabled auto-merge plus marker creation, and cleanup.
+  reports, handoff/withdrawal, config/environment-enabled auto-merge plus marker creation, and cleanup.
 
 ## Exploration Guidance
 
@@ -220,8 +225,8 @@ Vary initial versus post-start activity, same-second comments, resolved-thread f
 unprefixed local-user follow-ups, bot acknowledgements, review summaries, head changes, running/concluded/no CI,
 transient `UNKNOWN`, delivery failure, and casing. Cross lifecycle boundaries while a start, poll, label mutation, or
 report is in flight. Vary automatic/manual add, automatic withdrawal, mutation retry, existing/missing label, plain
-issue, and terminal PR. Exercise enabled/disabled/invalid auto-merge environment values, stale head rejection,
-startup with a ready label, merge rejection, and marker-label failure.
+issue, and terminal PR. Exercise global/project inheritance, project override, enabled/disabled/invalid auto-merge
+environment values, stale head rejection, startup with a ready label, merge rejection, and marker-label failure.
 
 ## Failure Signals
 
@@ -232,9 +237,10 @@ startup with a ready label, merge rejection, and marker-label failure.
   warning needed to distinguish new human feedback from an earlier agent reply.
 - A failed label mutation changes handoff, a plain issue is labeled as a PR, a resolution-only report withdraws
   readiness, or a manual mark is immediately undone by state it explicitly accepted.
-- Repository config can enable auto-merge; startup auto-merges or preserves a stale ready label while auto-merge is
-  enabled; a merge is not head-fenced; squash commit body is non-empty; merge failure removes readiness or retries
-  unchanged state; or a successful merge is falsely reported as failed solely because marker labeling failed.
+- Global config does not reach every host, project config fails to override it, an explicit environment value fails
+  to override both, or untrusted Pi reads project-local config. Startup auto-merges or preserves a stale ready label
+  while auto-merge is enabled; a merge is not head-fenced; squash commit body is non-empty; merge failure removes
+  readiness or retries unchanged state; or marker failure falsely reports a successful merge as failed.
 - A canceled session transition loses a watch, a successful transition retains an old timer, or an old session
   delivers into/removes readiness from a successor watch.
 - An agent creates a second wait/poll mechanism, Pi/OMP fails to trigger an idle turn, or a host discovers duplicate

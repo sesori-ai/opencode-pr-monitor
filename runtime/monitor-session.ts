@@ -2,7 +2,7 @@
 // deduplication, GitHub identity, timers, common actions, and readiness mutations;
 // adapters own transport, lifecycle policy, and truthful host wording.
 
-import { AUTO_MERGE_ENV, type MonitorConfig } from "../core/config"
+import type { MonitorConfig } from "../core/config"
 import { fetchPrSnapshot, type GhRunner, type PrSnapshot } from "../core/github"
 import { markReadyForHumanReview, removeReadyForHumanReview } from "../core/label"
 import { autoMergeFailureText, getAutoMergePullRequest, squashMergePullRequest } from "../core/merge"
@@ -260,8 +260,8 @@ export class MonitorSession<TConfig extends MonitorConfig> {
       }
       initial = withReadyLabel(initial, config.readyLabel, false)
       startupNotice =
-        `pre-existing ready label "${config.readyLabel}" was removed because ${AUTO_MERGE_ENV}=true. ` +
-        "Reassess the current head and call mark_ready if it is ready; that action will squash-merge it."
+        `pre-existing ready label "${config.readyLabel}" was removed because auto-merge is enabled. ` +
+        "Reassess the current head and call mark_ready if it is ready; that action will try to squash-merge it."
       if (this.lifecycleGeneration !== lifecycleGeneration) {
         return {
           text:
@@ -349,9 +349,8 @@ export class MonitorSession<TConfig extends MonitorConfig> {
 
     this.deps.log(`started monitoring ${displayKey}`)
     const autoMergeNotice = config.autoMerge
-      ? ` ${AUTO_MERGE_ENV}=true: automatic readiness and mark_ready make one squash-merge attempt for the ` +
-        "accepted head using only " +
-        "the PR title."
+      ? " Auto-merge enabled: automatic readiness and mark_ready make one squash-merge attempt for the " +
+        "accepted head using only the PR title."
       : ""
     const resetNotice = startupNotice === undefined ? "" : ` Startup safety reset: ${startupNotice}`
     return {

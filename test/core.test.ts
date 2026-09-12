@@ -169,7 +169,7 @@ function watchHarness(
 }
 
 test("the default debounce is two minutes", async () => {
-  const loaded = await loadMonitorConfig({ paths: [], environment: {}, log: () => {} })
+  const loaded = await loadMonitorConfig({ paths: [], globalPaths: [], environment: {}, log: () => {} })
   assert.equal(loaded.debounceMinutes, 2)
   assert.equal(loaded.ignoreCommentTag, "<!-- pr-monitor:reply -->")
   assert.equal(loaded.autoMerge, false)

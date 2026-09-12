@@ -14,7 +14,7 @@ Adapters own delivery/lifecycle/config paths, not watch orchestration.
 
 ```
 core/                # Pure per-PR state, GitHub normalization, reports, config types/loading.
-  config.ts    # Common MonitorConfig plus ClaudeMonitorConfig; permissive first-readable loading.
+  config.ts    # Common/Claude config; global base + first project override + env precedence.
   target.ts    # Parses PR target: "owner/repo#n" or full GitHub URL.
   github.ts    # GraphQL polling via injected GhRunner; normalizes into PrSnapshot.
   activity.ts  # detectActivity(prev, next): what counts as a change.
@@ -22,7 +22,7 @@ core/                # Pure per-PR state, GitHub normalization, reports, config 
   readiness.ts # Automatic eligibility/invalidation from CI, mergeability, heads, and acknowledged feedback.
   report.ts    # Markdown report rendering.
   label.ts     # mark_ready / unmark_ready: add or remove the readyLabel via gh REST.
-  merge.ts     # Environment-gated, head-fenced title-only squash merge + successful marker label.
+  merge.ts     # Config/env-gated, head-fenced title-only squash merge + successful marker label.
 
 runtime/             # Host-neutral application/session layer.
   monitor-session.ts # Watch registry, auth identity, actions, timers, labels, shutdown channels.
@@ -153,7 +153,7 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
   direction when the PR is unready or new feedback needs inspection.
 - **The monitor owns waiting.** Tool descriptions and every shipped skill forbid agent-created sleeps, delays, timeouts, scheduled checks, background polling, repeated `gh pr checks`, and routine `status`/`flush`. All shells end the turn and rely on push delivery; only a legacy Claude host without the messaging socket may be handed the exact `await-activity.mjs` command by a keep-alive message, and Claude may run only that.
 - **Startup readiness** — normally observe the existing label without auto-adding it, including disabled/retried
-  initial announcements. With `SESORI_PR_MONITOR_AUTO_MERGE=true`, remove a pre-existing ready label before watch
+  initial announcements. With auto-merge enabled by config or environment, remove a pre-existing ready label before
   registration and tell the agent in the start result—and the initial report when announcements are enabled—to
   reassess and call `mark_ready` again; startup never merges stale handoff state. The initial report and all skills
   require assessment of current-head
@@ -170,9 +170,10 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
   `pulls/{n}` and refuse non-open targets: label endpoints share the issue namespace, so a plain issue number or a
   terminal PR would otherwise produce false success. `mark_ready` best-effort creates the green label before adding
   it. `unmark_ready` treats a missing label as success. Standalone actions need no active monitor.
-- **Environment auto-merge** (`core/merge.ts`) — `SESORI_PR_MONITOR_AUTO_MERGE=true|1` is an environment-only,
-  fail-closed opt-in shared by every host. Automatic readiness and watched/standalone `mark_ready` first retain the
-  ready label, then make one squash-merge attempt fenced to the accepted head SHA. Squash commit title is the PR
+- **Configurable auto-merge** (`core/merge.ts`) — `autoMerge: true` in user-global or trusted project config enables
+  the feature; an explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE=true|false|1|0` overrides both layers and invalid
+  values fail closed. Automatic readiness and watched/standalone `mark_ready` first retain the ready label, then make
+  one squash-merge attempt fenced to the accepted head SHA. Squash commit title is the PR
   title and `commit_message` is explicitly empty. Success best-effort creates/applies `automatically-merged`; marker
   failure is a warning because merge is irreversible. Merge rejection keeps readiness and is not retried while that
   readiness state stays unchanged. External/pre-existing label observation never triggers merge.
@@ -193,16 +194,19 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
 
 ## Configuration
 
-`pr-monitor.json`, loaded fresh per start and standalone ready action: all adapters first look for repository
-`.pr-monitor.json`. Active-watch ready actions use the config captured at start. OpenCode falls back to project and
-worktree `.opencode/pr-monitor.json`; Claude Code uses `.claude/` then `.opencode/`; trusted Pi/OMP use
+Config loads fresh per start and standalone ready action. Defaults are overlaid by user-global
+`~/.config/pr-monitor/config.json` (or an absolute `$XDG_CONFIG_HOME/pr-monitor/config.json`), then the first
+readable project candidate. Active-watch ready actions use config captured at start. Every adapter starts project
+candidates with
+`.pr-monitor.json`; OpenCode falls back to project/worktree `.opencode/pr-monitor.json`; Claude Code uses `.claude/`
+then `.opencode/`; Hermes uses `.hermes/` then `.opencode/`; trusted Pi/OMP use
 `${CONFIG_DIR_NAME}/pr-monitor.json` then `.opencode/`. OMP's compatibility shim resolves the config directory to
 `.omp`; do not replace it with a hardcoded host branch.
 `MonitorConfig` contains common settings; `ClaudeMonitorConfig` adds `desktopNotifications`, `keepAlive`, and
-`keepAliveMaxMinutes`. Loading is permissive: unknown keys ignored, invalid values dropped, invalid JSON logged,
-missing file → defaults. Auto-merge is read only from host environment, never repository JSON. `ignoreCommentTag`
-is the mandatory local agent-reply prefix, defaults to `<!-- pr-monitor:reply -->`, and matches only at the start of
-a comment.
+`keepAliveMaxMinutes`. Unknown keys are ignored, invalid values leave the lower layer unchanged, invalid JSON is
+logged, and missing files use lower layers/defaults. An explicit auto-merge environment value overrides config.
+`ignoreCommentTag` is the mandatory local agent-reply prefix, defaults to `<!-- pr-monitor:reply -->`, and matches
+only at the start of a comment.
 
 ## GitHub layer
 

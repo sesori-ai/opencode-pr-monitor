@@ -24,6 +24,7 @@ test("Codex routes reports, config, actions and keep-alive by conversation", {
   const bin = join(home, "bin")
   const env = Object.fromEntries(Object.entries({ ...process.env,
     HOME: home, USERPROFILE: home, PATH: `${bin}:${process.env.PATH}`,
+    XDG_CONFIG_HOME: join(home, ".config"),
     SESORI_PR_MONITOR_AUTO_MERGE: "false",
     // Codex must not use a Claude socket inherited from an outer host.
     CLAUDE_CODE_MESSAGING_SOCKET: join(home, "not-codex.sock"),

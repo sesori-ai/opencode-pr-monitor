@@ -1,4 +1,4 @@
-// Explicit environment-gated squash merge. Callers decide which readiness
+// Explicit opt-in squash merge. Callers decide which readiness
 // transitions are trusted triggers; this module only performs one head-fenced
 // merge attempt and marks a successful result.
 

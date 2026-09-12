@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
 import {
   AUTO_MERGE_ENV,
+  globalMonitorConfigPath,
   loadClaudeConfig,
   loadMonitorConfig,
   type MonitorConfig,
@@ -165,45 +166,172 @@ test("common and Claude config resolve separate settings", async () => {
     }),
   )
   try {
-    const common = await loadMonitorConfig({ paths: [path], environment: {}, log: () => {} })
-    const claude = await loadClaudeConfig({ paths: [path], environment: {}, log: () => {} })
+    const common = await loadMonitorConfig({ paths: [path], globalPaths: [], environment: {}, log: () => {} })
+    const claude = await loadClaudeConfig({ paths: [path], globalPaths: [], environment: {}, log: () => {} })
     assert.equal(common.debounceMinutes, 5)
     assert.equal(common.readyLabel, "ready")
-    assert.equal(common.autoMerge, false)
+    assert.equal(common.autoMerge, true)
     assert.equal("desktopNotifications" in common, false)
     assert.equal(claude.desktopNotifications, true)
     assert.equal(claude.keepAlive, false)
     assert.equal(claude.keepAliveMaxMinutes, 9)
-    assert.equal(claude.autoMerge, false)
+    assert.equal(claude.autoMerge, true)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
 })
 
-test("auto-merge is enabled only by an explicit host environment flag", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "pr-monitor-auto-merge-config-"))
-  const path = join(directory, "pr-monitor.json")
-  await writeFile(path, JSON.stringify({ autoMerge: true }))
+test("global and project config layer before the explicit auto-merge environment override", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pr-monitor-layered-config-"))
+  const globalPath = join(directory, "global.json")
+  const projectPath = join(directory, "project.json")
+  await writeFile(globalPath, JSON.stringify({
+    debounceMinutes: 7,
+    maxCiWaitMinutes: 15,
+    readyLabel: "global-ready",
+    autoMerge: true,
+    desktopNotifications: true,
+    keepAlive: false,
+  }))
+  await writeFile(projectPath, JSON.stringify({
+    debounceMinutes: 5,
+    maxCiWaitMinutes: -1,
+    readyLabel: "project-ready",
+    autoMerge: false,
+    desktopNotifications: false,
+  }))
   const logs: string[] = []
   try {
-    const repositoryOnly = await loadMonitorConfig({ paths: [path], environment: {}, log: () => {} })
-    const enabled = await loadMonitorConfig({
-      paths: [path],
+    const layered = await loadClaudeConfig({
+      paths: [projectPath],
+      globalPaths: [globalPath],
+      environment: {},
+      log: () => {},
+    })
+    const globalOnly = await loadMonitorConfig({
+      paths: [],
+      globalPaths: [globalPath],
+      environment: {},
+      log: () => {},
+    })
+    const environmentEnabled = await loadMonitorConfig({
+      paths: [projectPath],
+      globalPaths: [globalPath],
       environment: { [AUTO_MERGE_ENV]: "TrUe" },
       log: () => {},
     })
-    const invalid = await loadMonitorConfig({
+    const environmentDisabled = await loadMonitorConfig({
       paths: [],
+      globalPaths: [globalPath],
+      environment: { [AUTO_MERGE_ENV]: "false" },
+      log: () => {},
+    })
+    const invalidEnvironment = await loadMonitorConfig({
+      paths: [],
+      globalPaths: [globalPath],
       environment: { [AUTO_MERGE_ENV]: "yes" },
       log: (message) => logs.push(message),
     })
+    const [one, zero, empty] = await Promise.all([
+      loadMonitorConfig({
+        paths: [projectPath],
+        globalPaths: [globalPath],
+        environment: { [AUTO_MERGE_ENV]: "1" },
+        log: () => {},
+      }),
+      loadMonitorConfig({
+        paths: [projectPath],
+        globalPaths: [globalPath],
+        environment: { [AUTO_MERGE_ENV]: "0" },
+        log: () => {},
+      }),
+      loadMonitorConfig({
+        paths: [projectPath],
+        globalPaths: [globalPath],
+        environment: { [AUTO_MERGE_ENV]: "" },
+        log: () => {},
+      }),
+    ])
 
-    assert.equal(repositoryOnly.autoMerge, false)
-    assert.equal(enabled.autoMerge, true)
-    assert.equal(invalid.autoMerge, false)
+    assert.equal(layered.debounceMinutes, 5)
+    assert.equal(layered.maxCiWaitMinutes, 15)
+    assert.equal(layered.readyLabel, "project-ready")
+    assert.equal(layered.autoMerge, false)
+    assert.equal(layered.desktopNotifications, false)
+    assert.equal(layered.keepAlive, false)
+    assert.equal(globalOnly.debounceMinutes, 7)
+    assert.equal(globalOnly.autoMerge, true)
+    assert.equal(environmentEnabled.autoMerge, true)
+    assert.equal(environmentDisabled.autoMerge, false)
+    assert.equal(invalidEnvironment.autoMerge, false)
+    assert.equal(one.autoMerge, true)
+    assert.equal(zero.autoMerge, false)
+    assert.equal(empty.autoMerge, false)
     assert.match(logs[0]!, new RegExp(AUTO_MERGE_ENV))
   } finally {
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("invalid JSON candidates are logged and fall through without discarding global values", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pr-monitor-config-fallback-"))
+  const globalPath = join(directory, "global.json")
+  const invalidProjectPath = join(directory, "invalid-project.json")
+  const fallbackProjectPath = join(directory, "fallback-project.json")
+  const logs: string[] = []
+  await writeFile(globalPath, JSON.stringify({ maxCiWaitMinutes: 17, readyLabel: "global-ready" }))
+  await writeFile(invalidProjectPath, "{")
+  await writeFile(fallbackProjectPath, JSON.stringify({ readyLabel: "project-ready" }))
+  try {
+    const loaded = await loadMonitorConfig({
+      paths: [invalidProjectPath, fallbackProjectPath],
+      globalPaths: [globalPath],
+      environment: {},
+      log: (message) => logs.push(message),
+    })
+
+    assert.equal(loaded.maxCiWaitMinutes, 17)
+    assert.equal(loaded.readyLabel, "project-ready")
+    assert.match(logs[0]!, /invalid-project\.json is not valid JSON/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("global config path follows XDG_CONFIG_HOME with a home fallback", () => {
+  assert.equal(
+    globalMonitorConfigPath({ environment: {}, homeDirectory: join("root", "home") }),
+    join("root", "home", ".config", "pr-monitor", "config.json"),
+  )
+  const xdgConfigHome = join(tmpdir(), "pr-monitor-xdg")
+  assert.equal(
+    globalMonitorConfigPath({
+      environment: { XDG_CONFIG_HOME: xdgConfigHome },
+      homeDirectory: join("root", "home"),
+    }),
+    join(xdgConfigHome, "pr-monitor", "config.json"),
+  )
+  assert.equal(
+    globalMonitorConfigPath({
+      environment: { XDG_CONFIG_HOME: "relative" },
+      homeDirectory: join("root", "home"),
+    }),
+    join("root", "home", ".config", "pr-monitor", "config.json"),
+  )
+})
+
+test("default config loading reads the cross-host global path", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pr-monitor-global-home-"))
+  const environment = { HOME: home }
+  const path = globalMonitorConfigPath({ environment })
+  await mkdir(join(home, ".config", "pr-monitor"), { recursive: true })
+  await writeFile(path, JSON.stringify({ debounceMinutes: 11, autoMerge: true }))
+  try {
+    const loaded = await loadMonitorConfig({ paths: [], environment, log: () => {} })
+    assert.equal(loaded.debounceMinutes, 11)
+    assert.equal(loaded.autoMerge, true)
+  } finally {
+    await rm(home, { recursive: true, force: true })
   }
 })
 
@@ -600,5 +728,6 @@ test("tool wording makes autonomous delivery and the no-delay rule explicit", ()
   assert.match(description, /automatically adds readiness/)
   assert.match(description, /unconditionally accept current state/)
   assert.match(description, /SESORI_PR_MONITOR_AUTO_MERGE=true/)
+  assert.match(description, /~\/.config\/pr-monitor\/config.json/)
   assert.match(description, /squash-merge attempt for the accepted head using only the PR title/)
 })

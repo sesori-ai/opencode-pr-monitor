@@ -34,20 +34,21 @@ checks, background polling loops, repeated `gh pr checks`, or routine `status`/`
 Monitors are in memory, belong to the OpenCode session that started them, stop on merge/close or session deletion,
 and do not survive an OpenCode restart.
 
-Set `SESORI_PR_MONITOR_AUTO_MERGE=true` in OpenCode's process environment to make automatic readiness and
-`mark_ready` perform one head-fenced, title-only squash merge. This irreversible switch is environment-only;
-repository config cannot enable it. With it enabled, monitor startup removes any pre-existing ready label and
-requires fresh assessment. Successful merges get a dynamically created `automatically-merged` label. See the root
-README for failure behavior and setup details.
+Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
+readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
+an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
+removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
+`automatically-merged` label. See the root README for failure behavior and setup details.
 
 ## Configuration
 
-Use repository `.pr-monitor.json`; `.opencode/pr-monitor.json` remains a fallback. Available settings:
+Global `~/.config/pr-monitor/config.json` supplies defaults beneath repository `.pr-monitor.json`;
+`.opencode/pr-monitor.json` remains a project fallback. Available settings:
 
 - `debounceMinutes`, `maxCiWaitMinutes`, and `pollIntervalSeconds`
 - `ignoreCommentTag` (mandatory agent-reply prefix; default `<!-- pr-monitor:reply -->`)
 - `announceOnStart` and `flushOnCiFailure`
-- `readyLabel`
+- `readyLabel` and `autoMerge`
 
 See the [repository README](https://github.com/sesori-ai/pr-monitor-plugin#readme) for action semantics, defaults,
 configuration examples, and development/release instructions. Durable behavior and artifact checks are cataloged in

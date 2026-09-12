@@ -206,7 +206,7 @@ Behavior notes for the Codex shell:
 - The slash commands are Claude Code only; use the `pr_monitor` tool directly (`status`, `stop`, `mark_ready`, ...).
 - The report spool is shared with Claude Code at `~/.claude/pr-monitor/spool/`. Codex queues are nested under
   `<host pid>/<thread id>`; hooks and waiters select only that conversation. Claude Code retains process routing.
-- Startup normally observes the existing ready label. With environment auto-merge enabled, startup instead removes
+- Startup normally observes the existing ready label. With auto-merge enabled, startup instead removes
   a pre-existing ready label and requires a fresh `mark_ready` judgment. The agent must assess the initial report,
   including after a harness restart, and immediately mark an already-settled PR ready. Empty results after creation
   or a fresh push do not establish readiness; age alone is insufficient. Automatic readiness continues for later
@@ -262,18 +262,20 @@ All four harnesses register the same tool:
 | `mark_ready` | `owner/repo#123` or full PR URL    | Add `readyLabel`; auto-merge opt-in also squash-merges. |
 | `unmark_ready` | `owner/repo#123` or full PR URL  | Remove the label now. It is idempotent and is not a permanent hold: an active monitor may restore readiness after a later clean assessment. |
 
-## Environment-gated auto-merge
+## Opt-in auto-merge
 
-> **Warning:** auto-merge is irreversible. Enable it only in a trusted host environment whose authenticated `gh`
-> account is allowed to merge the repositories it monitors.
+> **Warning:** auto-merge is irreversible. Enable it only in user-owned config or a trusted repository whose
+> authenticated `gh` account is allowed to merge its pull requests. A checked-out project's config can enable it.
 
-Set `SESORI_PR_MONITOR_AUTO_MERGE=true` (or `1`) in the host process environment, then fully restart the desktop
-host. Unset it, set it to `false`, `0`, or an empty value to disable it. Any other value fails closed and logs a
-configuration warning. This switch is deliberately environment-only: an `autoMerge` key in repository
-`.pr-monitor.json` is ignored, so checked-out code cannot opt the host into merging.
+Set `"autoMerge": true` in either global or project monitor config. Global config lives at
+`~/.config/pr-monitor/config.json`, or `$XDG_CONFIG_HOME/pr-monitor/config.json` when `XDG_CONFIG_HOME` is an
+absolute path.
+Project config can override it. An explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides
+both config layers: `true`/`1` enables; `false`/`0`/empty disables. Any other value fails closed, disables auto-merge,
+and logs a warning. Restart the desktop host after changing its environment.
 
 ```sh
-# Shell-launched hosts
+# Shell-launched hosts: explicit environment override
 export SESORI_PR_MONITOR_AUTO_MERGE=true
 
 # macOS GUI hosts for the current login session; restart the app afterward
@@ -299,11 +301,17 @@ When enabled:
 
 ## Configuration
 
-Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls back to
-`.claude/pr-monitor.json` then `.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`;
-Hermes falls back to `.hermes/pr-monitor.json` then `.opencode/pr-monitor.json`; Pi/OMP use their
-`CONFIG_DIR_NAME` (`.pi`/`.omp`) before `.opencode/pr-monitor.json`. Pi reads project-local config only after project
-trust. Auto-merge is not a JSON setting; use the host environment switch above.
+Global config for every host lives at `~/.config/pr-monitor/config.json` (or under an absolute
+`XDG_CONFIG_HOME`). Optional
+project config uses `.pr-monitor.json`; Claude Code falls back to `.claude/pr-monitor.json` then
+`.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`; Hermes falls back to
+`.hermes/pr-monitor.json` then `.opencode/pr-monitor.json`; Pi/OMP use their `CONFIG_DIR_NAME` (`.pi`/`.omp`) before
+`.opencode/pr-monitor.json`. Pi reads project-local config only after project trust.
+
+Settings layer as: defaults → global config → first readable project/host config. Valid project values override
+matching global values; invalid values leave the lower layer unchanged. An explicit `SESORI_PR_MONITOR_AUTO_MERGE`
+environment value then overrides only `autoMerge`. Config is loaded for each new watch and standalone ready action;
+an active watch retains the values captured when it started.
 
 ```json
 {
@@ -315,6 +323,7 @@ trust. Auto-merge is not a JSON setting; use the host environment switch above.
   "flushOnCiFailure": true,
   "desktopNotifications": false,
   "readyLabel": "ready-for-human-review",
+  "autoMerge": false,
   "keepAlive": true,
   "keepAliveMaxMinutes": 120
 }
@@ -330,6 +339,7 @@ trust. Auto-merge is not a JSON setting; use the host environment switch above.
 | `flushOnCiFailure`     | `true`  | Report a newly failing check at the next poll instead of waiting out `debounceMinutes` (and any CI hold), so CI fixes start sooner. Counts failures found while the suite is still running. At most one instant report per head commit — later failures on the same commit ride along with the debounced suite-conclusion report. Set `false` for debounce-only delivery. |
 | `desktopNotifications` | `false` | Claude Code only: emit an OS notification (macOS/Linux) when a report is delivered or spooled. |
 | `readyLabel`           | `ready-for-human-review` | Label managed automatically by active watches and explicitly by `mark_ready`/`unmark_ready`. |
+| `autoMerge`            | `false` | Opt into head-fenced, title-only squash merge after readiness. |
 | `keepAlive`            | `true`  | Claude Code fallback hosts only (no messaging socket): while a monitored PR lacks the ready label, refuse turn-end and have Claude wait for the next report. Ignored on push-enabled hosts, where reports arrive on their own. Set `false` for passive delivery. |
 | `keepAliveMaxMinutes`  | `120`   | Claude Code fallback hosts only: cap on how long the keep-alive loop waits with *nothing happening*. Refreshed by every delivered report, so it bounds idle time rather than total work time. Ignored on push-enabled hosts. |
 

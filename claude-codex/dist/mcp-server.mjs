@@ -7201,7 +7201,7 @@ var require_dist = __commonJS({
 
 // claude-codex/src/mcp-server.ts
 import { readFileSync as readFileSync2 } from "node:fs";
-import { isAbsolute, join as join3 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join4 } from "node:path";
 import process5 from "node:process";
 
 // node_modules/zod/v3/helpers/util.js
@@ -31269,6 +31269,8 @@ var StdioServerTransport = class {
 
 // core/config.ts
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 var AUTO_MERGE_ENV = "SESORI_PR_MONITOR_AUTO_MERGE";
 var DEFAULT_MONITOR_CONFIG = {
   debounceMinutes: 2,
@@ -31287,22 +31289,31 @@ var DEFAULT_CLAUDE_CONFIG = {
 };
 var MIN_POLL_INTERVAL_SECONDS = 30;
 var MAX_POLL_INTERVAL_SECONDS = 86400;
+function globalMonitorConfigPath({
+  environment = process.env,
+  homeDirectory
+} = {}) {
+  const xdgConfigHome = environment["XDG_CONFIG_HOME"]?.trim();
+  const environmentHome = environment["HOME"]?.trim() || environment["USERPROFILE"]?.trim();
+  const home = homeDirectory ?? environmentHome ?? homedir();
+  const configHome = xdgConfigHome !== void 0 && isAbsolute(xdgConfigHome) ? xdgConfigHome : join(home, ".config");
+  return join(configHome, "pr-monitor", "config.json");
+}
 function positiveNumber(record2, key) {
   const value = record2[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
 }
-function autoMergeEnabled(environment, log2) {
+function environmentAutoMergeOverride(environment, log2) {
   const raw = environment[AUTO_MERGE_ENV];
-  if (raw === void 0) return false;
+  if (raw === void 0) return void 0;
   const value = raw.trim().toLowerCase();
   if (value === "true" || value === "1") return true;
   if (value === "false" || value === "0" || value === "") return false;
-  log2(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge remains disabled.`);
+  log2(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge is disabled.`);
   return false;
 }
-function resolveMonitorConfig(raw, environment, log2) {
-  const config2 = { ...DEFAULT_MONITOR_CONFIG, autoMerge: autoMergeEnabled(environment, log2) };
-  if (typeof raw !== "object" || raw === null) return config2;
+function applyMonitorConfig(config2, raw) {
+  if (typeof raw !== "object" || raw === null) return;
   const record2 = raw;
   config2.debounceMinutes = positiveNumber(record2, "debounceMinutes") ?? config2.debounceMinutes;
   config2.maxCiWaitMinutes = positiveNumber(record2, "maxCiWaitMinutes") ?? config2.maxCiWaitMinutes;
@@ -31316,24 +31327,32 @@ function resolveMonitorConfig(raw, environment, log2) {
   if (typeof flushOnCiFailure === "boolean") config2.flushOnCiFailure = flushOnCiFailure;
   const label = record2["readyLabel"];
   if (typeof label === "string" && label.length > 0) config2.readyLabel = label;
+  const autoMerge = record2["autoMerge"];
+  if (typeof autoMerge === "boolean") config2.autoMerge = autoMerge;
+}
+function resolveMonitorConfig(layers, environment, log2) {
+  const config2 = { ...DEFAULT_MONITOR_CONFIG };
+  for (const raw of layers) applyMonitorConfig(config2, raw);
+  config2.autoMerge = environmentAutoMergeOverride(environment, log2) ?? config2.autoMerge;
   return config2;
 }
-function resolveClaudeConfig(raw, environment, log2) {
-  const config2 = { ...resolveMonitorConfig(raw, environment, log2), ...DEFAULT_CLAUDE_CONFIG };
-  if (typeof raw !== "object" || raw === null) return config2;
+function applyClaudeConfig(config2, raw) {
+  if (typeof raw !== "object" || raw === null) return;
   const record2 = raw;
   const notify = record2["desktopNotifications"];
   if (typeof notify === "boolean") config2.desktopNotifications = notify;
   const keepAlive = record2["keepAlive"];
   if (typeof keepAlive === "boolean") config2.keepAlive = keepAlive;
   config2.keepAliveMaxMinutes = positiveNumber(record2, "keepAliveMaxMinutes") ?? config2.keepAliveMaxMinutes;
+}
+function resolveClaudeConfig(layers, environment, log2) {
+  const config2 = { ...resolveMonitorConfig(layers, environment, log2), ...DEFAULT_CLAUDE_CONFIG };
+  for (const raw of layers) applyClaudeConfig(config2, raw);
   return config2;
 }
-async function loadResolvedConfig({
+async function readFirstConfig({
   paths,
-  log: log2,
-  environment = process.env,
-  resolve
+  log: log2
 }) {
   for (const path of paths) {
     let text;
@@ -31343,12 +31362,29 @@ async function loadResolvedConfig({
       continue;
     }
     try {
-      return resolve(JSON.parse(text), environment, log2);
+      return { found: true, raw: JSON.parse(text) };
     } catch (error51) {
       log2(`config file ${path} is not valid JSON, ignoring it: ${error51.message}`);
     }
   }
-  return resolve(void 0, environment, log2);
+  return { found: false };
+}
+async function loadResolvedConfig({
+  paths,
+  globalPaths,
+  log: log2,
+  environment = process.env,
+  resolve
+}) {
+  const global = await readFirstConfig({
+    paths: globalPaths ?? [globalMonitorConfigPath({ environment })],
+    log: log2
+  });
+  const project = await readFirstConfig({ paths, log: log2 });
+  const layers = [];
+  if (global.found) layers.push(global.raw);
+  if (project.found) layers.push(project.raw);
+  return resolve(layers, environment, log2);
 }
 function loadClaudeConfig(input) {
   return loadResolvedConfig({ ...input, resolve: resolveClaudeConfig });
@@ -32097,14 +32133,14 @@ function buildReadinessLines({
   readyLabel,
   replyPrefix,
   readinessError,
-  autoMergeEnabled: autoMergeEnabled2 = false,
+  autoMergeEnabled = false,
   autoMergeNotice
 }) {
   const ready = hasReadyLabel(snapshot, readyLabel);
   const lines = [
     ready ? `- Ready for human review: YES \u2014 label "${readyLabel}" is present.` : `- Ready for human review: NO \u2014 label "${readyLabel}" is absent.`
   ];
-  if (autoMergeEnabled2) {
+  if (autoMergeEnabled) {
     lines.push(
       "- Auto-merge: ENABLED \u2014 automatic readiness and mark_ready make one squash-merge attempt for the accepted head; the squash commit uses only the PR title."
     );
@@ -32772,7 +32808,7 @@ function buildMonitorToolDescription({
   lifecycle,
   waiting
 }) {
-  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With SESORI_PR_MONITOR_AUTO_MERGE=true, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Tuning lives in ${configPath}. ${lifecycle}`;
+  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when autoMerge is enabled by trusted config or SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE environment value overrides autoMerge config. ${lifecycle}`;
 }
 
 // runtime/monitor-session.ts
@@ -32913,7 +32949,7 @@ ${raced.watch.statusLine()}` };
         };
       }
       initial = withReadyLabel(initial, config2.readyLabel, false);
-      startupNotice = `pre-existing ready label "${config2.readyLabel}" was removed because ${AUTO_MERGE_ENV}=true. Reassess the current head and call mark_ready if it is ready; that action will squash-merge it.`;
+      startupNotice = `pre-existing ready label "${config2.readyLabel}" was removed because auto-merge is enabled. Reassess the current head and call mark_ready if it is ready; that action will try to squash-merge it.`;
       if (this.lifecycleGeneration !== lifecycleGeneration) {
         return {
           text: `Monitor session ended while ${displayKey} was starting. ${startupNotice} No active monitor remains.`
@@ -32986,7 +33022,7 @@ ${resetRace.watch.statusLine()}` };
       void watch.initializeReadiness();
     }
     this.deps.log(`started monitoring ${displayKey}`);
-    const autoMergeNotice = config2.autoMerge ? ` ${AUTO_MERGE_ENV}=true: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title.` : "";
+    const autoMergeNotice = config2.autoMerge ? " Auto-merge enabled: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title." : "";
     const resetNotice = startupNotice === void 0 ? "" : ` Startup safety reset: ${startupNotice}`;
     return {
       text: `Started monitoring ${displayKey} \u2014 "${initial.title}".${autoMergeNotice}${resetNotice}`,
@@ -33167,18 +33203,18 @@ function pushMessage({ channel, text }) {
 
 // claude-codex/src/session-state.ts
 import { mkdirSync as mkdirSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 
 // claude-codex/src/spool.ts
 import { execFile as execFile2, execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-var SPOOL_ROOT = join(homedir(), ".claude", "pr-monitor", "spool");
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
+var SPOOL_ROOT = join2(homedir2(), ".claude", "pr-monitor", "spool");
 var OWNER_FILE = "owner";
 function spoolDirFor(claudePid2, sessionId) {
-  const root = join(SPOOL_ROOT, String(claudePid2));
-  return sessionId === void 0 ? root : join(root, sessionId);
+  const root = join2(SPOOL_ROOT, String(claudePid2));
+  return sessionId === void 0 ? root : join2(root, sessionId);
 }
 var seq = 0;
 function startToken(pid) {
@@ -33206,7 +33242,7 @@ function claimSpool(claudePid2) {
   if (token === void 0) return;
   let previous;
   try {
-    previous = readFileSync(join(dir, OWNER_FILE), "utf8");
+    previous = readFileSync(join2(dir, OWNER_FILE), "utf8");
   } catch {
   }
   if (previous !== token) {
@@ -33217,9 +33253,9 @@ function claimSpool(claudePid2) {
   }
   try {
     mkdirSync(dir, { recursive: true });
-    const tmp = join(dir, `.${OWNER_FILE}.${process.pid}.tmp`);
+    const tmp = join2(dir, `.${OWNER_FILE}.${process.pid}.tmp`);
     writeFileSync(tmp, token, "utf8");
-    renameSync(tmp, join(dir, OWNER_FILE));
+    renameSync(tmp, join2(dir, OWNER_FILE));
     claimed = { pid: claudePid2, token };
   } catch {
   }
@@ -33236,7 +33272,7 @@ function assertOwned(claudePid2, dir) {
   if (claimed === void 0 || claimed.pid !== claudePid2) return;
   let current;
   try {
-    current = readFileSync(join(dir, OWNER_FILE), "utf8");
+    current = readFileSync(join2(dir, OWNER_FILE), "utf8");
   } catch {
     current = void 0;
   }
@@ -33248,7 +33284,7 @@ function assertOwned(claudePid2, dir) {
 function probeSpool(claudePid2, sessionId) {
   const dir = spoolDirFor(claudePid2, sessionId);
   mkdirSync(dir, { recursive: true });
-  const probe = join(dir, `.probe-${process.pid}`);
+  const probe = join2(dir, `.probe-${process.pid}`);
   writeFileSync(probe, "", "utf8");
   rmSync(probe, { force: true });
 }
@@ -33258,9 +33294,9 @@ function spoolReport(claudePid2, report, sessionId) {
   mkdirSync(dir, { recursive: true });
   seq += 1;
   const name = `${Date.now()}-${process.pid}-${String(seq).padStart(4, "0")}`;
-  const tmp = join(dir, `${name}.tmp`);
+  const tmp = join2(dir, `${name}.tmp`);
   writeFileSync(tmp, report, "utf8");
-  renameSync(tmp, join(dir, `${name}.md`));
+  renameSync(tmp, join2(dir, `${name}.md`));
 }
 function collectDeadSpools(selfClaudePid) {
   let entries;
@@ -33274,7 +33310,7 @@ function collectDeadSpools(selfClaudePid) {
     if (!Number.isInteger(pid) || pid <= 0) continue;
     if (pid === selfClaudePid || isAlive(pid)) continue;
     try {
-      rmSync(join(SPOOL_ROOT, entry), { recursive: true, force: true });
+      rmSync(join2(SPOOL_ROOT, entry), { recursive: true, force: true });
     } catch {
     }
   }
@@ -33302,7 +33338,7 @@ function notifyDesktop(title, body) {
 var SESSION_STATE_FILE = "session.json";
 function writeSessionState(claudePid2, state, sessionId) {
   const dir = spoolDirFor(claudePid2, sessionId);
-  const path = join2(dir, SESSION_STATE_FILE);
+  const path = join3(dir, SESSION_STATE_FILE);
   if (!ownsSpool(claudePid2)) return;
   try {
     mkdirSync2(dir, { recursive: true });
@@ -33322,9 +33358,9 @@ var log = (message) => console.error(`[pr-monitor] ${message}`);
 var runGh = createNodeGhRunner();
 var createAdapter = ({ sessionId, projectDir }) => {
   const configPaths = [
-    join3(projectDir, ".pr-monitor.json"),
-    join3(projectDir, isCodex ? ".codex" : ".claude", "pr-monitor.json"),
-    join3(projectDir, ".opencode", "pr-monitor.json")
+    join4(projectDir, ".pr-monitor.json"),
+    join4(projectDir, isCodex ? ".codex" : ".claude", "pr-monitor.json"),
+    join4(projectDir, ".opencode", "pr-monitor.json")
   ];
   const handedOff = /* @__PURE__ */ new Set();
   let keepAliveUntilMs = 0;
@@ -33465,7 +33501,7 @@ var adapterFor = (meta3) => {
   if (existing !== void 0) return existing;
   let projectDir;
   try {
-    const context = JSON.parse(readFileSync2(join3(SPOOL_ROOT, "codex-contexts", `${sessionId}.json`), "utf8"));
+    const context = JSON.parse(readFileSync2(join4(SPOOL_ROOT, "codex-contexts", `${sessionId}.json`), "utf8"));
     const token = startToken(claudePid);
     const registeredHere = Array.isArray(context.owners) && context.owners.some(
       (owner) => owner?.pid === claudePid && owner.token === token
@@ -33473,7 +33509,7 @@ var adapterFor = (meta3) => {
     if (registeredHere) projectDir = context.cwd;
   } catch {
   }
-  if (typeof projectDir !== "string" || !isAbsolute(projectDir)) {
+  if (typeof projectDir !== "string" || !isAbsolute2(projectDir)) {
     throw new Error("Cannot start monitoring: the PR Monitor delivery hook has not registered this Codex conversation in the current host. Installing the plugin does not grant hook trust. Open Codex CLI on the host running this session (same OS user and CODEX_HOME), run /hooks, and enable/trust PR Monitor's SessionStart, UserPromptSubmit, PostToolUse, and Stop hooks. In Sesori or another client without /hooks, use a terminal on that host. Then send a new prompt here and retry. Updated hooks may need review again. Setup: https://github.com/sesori-ai/pr-monitor-plugin#trust-the-delivery-hooks-required\nNo monitor was started; reports cannot be delivered until hooks run.");
   }
   const adapter = createAdapter({ sessionId, projectDir });
