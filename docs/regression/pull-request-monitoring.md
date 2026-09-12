@@ -200,7 +200,8 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 - Reports are plugin-authored user messages delivered by `agent.steer()`. An idle Agent starts a turn; a busy Agent
   receives the report at its next step boundary. Exact Agent object identity—not only session ID—owns delivery.
 - Agent-scoped effects stop watches and remove tools on conversation disposal. Plugin unload drains every Agent
-  cleanup. A replacement Agent with a reused ID starts empty; process restart does not restore watches.
+  cleanup. A replacement Agent with a reused ID remains tool-less until the prior runtime's startup/readiness
+  mutation cleanup drains, then starts empty. Process restart does not restore watches.
 - `ctx.skills.registerProvider()` exposes exactly one canonical `monitor-pr` skill at `BUNDLED_SKILL_RANK`, allowing
   higher-ranked project and user providers to override it.
 - Harness exposes no public project-trust signal. Load user-global config and only inherited-process or Harness-home

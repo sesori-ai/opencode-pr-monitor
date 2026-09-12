@@ -1,23 +1,45 @@
-import { rm, writeFile } from "node:fs/promises"
+import { execFileSync } from "node:child_process"
+import { copyFile, mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { build } from "esbuild"
 import { copyPushSkill } from "./copy-push-skill.mjs"
 
-await rm(new URL("../deepseek/dist", import.meta.url), { recursive: true, force: true })
-await build({
-  entryPoints: [fileURLToPath(new URL("../deepseek/index.ts", import.meta.url))],
-  outfile: fileURLToPath(new URL("../deepseek/dist/index.js", import.meta.url)),
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "esnext",
-  external: ["@deepseek-ai/*"],
-  logLevel: "warning",
-})
-const declaration =
-  'import type { Context } from "@deepseek-ai/cordis"\n\n' +
-  'export declare const name = "pr-monitor"\n' +
-  'export declare const inject: readonly ["agents", "skills", "tools"]\n' +
-  "export declare function apply(ctx: Context): void\n"
-await writeFile(new URL("../deepseek/dist/index.d.ts", import.meta.url), declaration)
-await copyPushSkill({ target: new URL("../deepseek/skills/monitor-pr/", import.meta.url) })
+const root = fileURLToPath(new URL("../", import.meta.url))
+const source = fileURLToPath(new URL("../deepseek/index.ts", import.meta.url))
+const output = fileURLToPath(new URL("../deepseek/dist/index.js", import.meta.url))
+const declaration = fileURLToPath(new URL("../deepseek/dist/index.d.ts", import.meta.url))
+const declarationDirectory = await mkdtemp(join(tmpdir(), "pr-monitor-deepseek-types-"))
+try {
+  await rm(new URL("../deepseek/dist", import.meta.url), { recursive: true, force: true })
+  await build({
+    entryPoints: [source],
+    outfile: output,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "esnext",
+    external: ["@deepseek-ai/*"],
+    logLevel: "warning",
+  })
+  execFileSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../node_modules/typescript/bin/tsc", import.meta.url)),
+      "--project",
+      fileURLToPath(new URL("../tsconfig.json", import.meta.url)),
+      "--declaration",
+      "--emitDeclarationOnly",
+      "--noEmit",
+      "false",
+      "--outDir",
+      declarationDirectory,
+    ],
+    { cwd: root, stdio: "pipe" },
+  )
+  await copyFile(join(declarationDirectory, "deepseek", "index.d.ts"), declaration)
+  await copyPushSkill({ target: new URL("../deepseek/skills/monitor-pr/", import.meta.url) })
+} finally {
+  await rm(declarationDirectory, { recursive: true, force: true })
+}

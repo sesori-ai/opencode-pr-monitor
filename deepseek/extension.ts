@@ -181,7 +181,7 @@ function registerAgentRuntime({
   runtimes: Map<Agent, OwnerCleanup>
   isStopping: () => boolean
 }): void {
-  if (isStopping() || runtimes.has(agent) || !ctx.agents.roots().includes(agent)) return
+  if (isStopping() || runtimes.has(agent) || !isLiveRoot({ ctx, agent })) return
 
   const log =
     dependencies.log ??
@@ -304,21 +304,25 @@ export function registerDeepSeekMonitor({
   dependencies?: DeepSeekMonitorDependencies
 }): DeepSeekMonitorController {
   const runtimes = new Map<Agent, OwnerCleanup>()
+  const pendingRegistrations = new Set<Promise<void>>()
   let stopping = false
+  const warn = ({ message }: { message: string }): void => {
+    if (dependencies.log !== undefined) dependencies.log(message)
+    else ctx.logger.warn(`[pr-monitor] ${message}`)
+  }
+  const invokeCleanup = ({ cleanup }: { cleanup: OwnerCleanup }): Promise<void> => {
+    try {
+      return Promise.resolve(cleanup())
+    } catch (error) {
+      return Promise.reject(error)
+    }
+  }
   const lifecycle = ctx.effect(() => {
     const markdown =
       dependencies.skillMarkdown ??
       readFileSync(join(packageSkillDirectory({ moduleUrl: import.meta.url }), SKILL_NAME, "SKILL.md"), "utf8")
     const disposeSkill = registerPackagedSkill({ ctx, markdown })
-    const register = ({ agent }: { agent: Agent }): void => {
-      for (const [owner, cleanup] of runtimes.entries()) {
-        if (owner === agent || owner.id !== agent.id) continue
-        void Promise.resolve(cleanup()).catch((error: unknown) => {
-          const message = `replacement cleanup failed for DeepSeek Agent ${owner.id}: ${String(error)}`
-          if (dependencies.log !== undefined) dependencies.log(message)
-          else ctx.logger.warn(`[pr-monitor] ${message}`)
-        })
-      }
+    const registerRuntime = ({ agent }: { agent: Agent }): void => {
       registerAgentRuntime({
         ctx,
         agent,
@@ -327,26 +331,72 @@ export function registerDeepSeekMonitor({
         isStopping: () => stopping,
       })
     }
+    const register = ({ agent }: { agent: Agent }): void => {
+      if (stopping) return
+      // A reused ID may still own an irreversible readiness operation. Do not
+      // expose the successor tool until every prior mutation barrier drains.
+      const replacements = [...runtimes.entries()].filter(
+        ([owner]) => owner !== agent && owner.id === agent.id,
+      )
+      if (replacements.length === 0) {
+        registerRuntime({ agent })
+        return
+      }
+
+      const cleanupResults = Promise.allSettled(
+        replacements.map(([, cleanup]) => invokeCleanup({ cleanup })),
+      )
+      let pendingRegistration: Promise<void>
+      pendingRegistration = cleanupResults
+        .then((results) => {
+          for (const [index, result] of results.entries()) {
+            if (result.status !== "rejected") continue
+            const owner = replacements[index]?.[0]
+            warn({
+              message:
+                `replacement cleanup failed for DeepSeek Agent ${owner?.id ?? "unknown"}: ` +
+                String(result.reason),
+            })
+          }
+          if (stopping) return
+          try {
+            registerRuntime({ agent })
+          } catch (error) {
+            warn({
+              message: `replacement registration failed for DeepSeek Agent ${agent.id}: ${String(error)}`,
+            })
+          }
+        })
+        .finally(() => pendingRegistrations.delete(pendingRegistration))
+      pendingRegistrations.add(pendingRegistration)
+    }
     const stopCreated = ctx.on("agent/created", register)
     for (const agent of ctx.agents.roots()) register({ agent })
 
     return async () => {
       stopping = true
       const entries = [...runtimes.entries()]
+      const registrations = [...pendingRegistrations]
       runtimes.clear()
       const cleanups = [
         { label: "agent/created listener", cleanup: stopCreated },
         { label: "skill provider", cleanup: disposeSkill },
         ...entries.map(([agent, cleanup]) => ({ label: `DeepSeek Agent ${agent.id}`, cleanup })),
+        ...registrations.map((registration, index) => ({
+          label: `replacement registration ${index + 1}`,
+          cleanup: () => registration,
+        })),
       ]
       const results = await Promise.allSettled(
-        cleanups.map(({ cleanup }) => Promise.resolve().then(() => cleanup())),
+        cleanups.map(({ cleanup }) => invokeCleanup({ cleanup })),
       )
       for (const [index, result] of results.entries()) {
         if (result.status !== "rejected") continue
-        const message = `cleanup failed for ${cleanups[index]?.label ?? "unknown owner"}: ${String(result.reason)}`
-        if (dependencies.log !== undefined) dependencies.log(message)
-        else ctx.logger.warn(`[pr-monitor] ${message}`)
+        warn({
+          message:
+            `cleanup failed for ${cleanups[index]?.label ?? "unknown owner"}: ` +
+            String(result.reason),
+        })
       }
     }
   }, "pr-monitor.lifecycle()")

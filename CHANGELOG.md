@@ -10,11 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Native DeepSeek Harness 0.1.5-rc.2+ support through `@sesori/pr-monitor-deepseek`, an installable Cordis bundle
-  with one monitor tool per root Agent, native busy/idle `steer` delivery, Agent-scoped cleanup, and a canonical
-  bundled-rank skill that returns delegated children to the root owner. DeepSeek loads only user-global
+  with one monitor tool per root Agent, native busy/idle `steer` delivery, Agent-scoped cleanup, same-ID replacement
+  registration fenced behind prior mutation cleanup, and a canonical bundled-rank skill that returns delegated
+  children to the root owner. DeepSeek loads only user-global
   configuration and inherited-process or Harness-home user-provenance auto-merge environment values. It ignores
-  project config and invoking-project `.env` because Harness exposes no project-trust signal. Build, package,
-  version, release, documentation, and regression surfaces now include the third npm artifact.
+  project config and invoking-project `.env` because Harness exposes no project-trust signal. Build-generated
+  declarations, package, version, release, documentation, and regression surfaces now include the third npm
+  artifact.
 
 ### Changed
 

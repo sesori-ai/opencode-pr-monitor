@@ -398,10 +398,26 @@ test("DeepSeek agent disposal fences old timers and same-id replacements", async
   const harness = fakeDeepSeekHarness()
   const timers = timerHarness()
   const runner = runnerHarness({ states: ["OPEN", "MERGED"] })
+  let markMutationStarted!: () => void
+  let releaseMarkMutation!: () => void
+  const mutationStarted = new Promise<void>((resolve) => {
+    markMutationStarted = resolve
+  })
+  const mutationGate = new Promise<void>((resolve) => {
+    releaseMarkMutation = resolve
+  })
+  const runGh: GhRunner = async (args) => {
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route.endsWith("/issues/42/labels") && !args.includes("DELETE")) {
+      markMutationStarted()
+      await mutationGate
+    }
+    return await runner.runGh(args)
+  }
   const controller = registerDeepSeekMonitor({
     ctx: harness.ctx,
     dependencies: {
-      runGh: runner.runGh,
+      runGh,
       loadConfig: async () => monitorConfig({ announceOnStart: false }),
       schedule: timers.schedule,
       cancel: timers.cancel,
@@ -420,19 +436,34 @@ test("DeepSeek agent disposal fences old timers and same-id replacements", async
   const oldTimer = timers.timers[0]
   assert.equal(oldTimer?.cancelled, false)
 
+  const markReadyResult = executeTool({
+    tool: originalTool,
+    agent: original.agent,
+    action: MonitorAction.markReady,
+    pr: "sesori/example#42",
+  })
+  await mutationStarted
   const replacement = harness.createAgent({ id: "reused-id" })
-  const replacementTool = replacement.tool()
-  assert.ok(replacementTool)
+  assert.equal(replacement.tool(), undefined)
   assert.equal(original.tool(), undefined)
   assert.match(
     await executeTool({ tool: originalTool, agent: original.agent, action: MonitorAction.status }),
     /owning DeepSeek Harness root conversation is no longer live/,
   )
 
-  assert.equal(oldTimer?.cancelled, true)
+  assert.equal(oldTimer?.cancelled, false)
   oldTimer?.callback()
   await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate))
+  assert.equal(replacement.tool(), undefined)
   assert.equal(runner.snapshotRequests, 1)
+
+  releaseMarkMutation()
+  assert.match(await markReadyResult, /label "ready-for-human-review" added/)
+  assert.equal(runner.labelAdded, true)
+  await waitFor({ condition: () => replacement.tool() !== undefined })
+  assert.equal(oldTimer?.cancelled, true)
+  const replacementTool = replacement.tool()
+  assert.ok(replacementTool)
   assert.equal(original.messages.length, 0)
   assert.equal(replacement.messages.length, 0)
 

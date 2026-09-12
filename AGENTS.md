@@ -46,7 +46,8 @@ deepseek/            # @sesori/pr-monitor-deepseek native Cordis bundle.
   index.ts     # Sole public package entry: name, inject, apply.
   extension.ts # One MonitorSession/tool per exact root Agent; native steer delivery and bundled skill provider.
   cordis.patch.yml # dsh.bundle.patch inserts the plugin into a selected Harness profile.
-  dist/        # Ephemeral npm bundle, declaration, and copied skill; ignored; never commit.
+  dist/        # Ephemeral npm bundle and declaration; ignored; never commit.
+  skills/      # Generated monitor-pr skill copy; ignored; never commit.
 
 pi/                  # @sesori/pr-monitor-pi workspace shared by upstream Pi and OMP.
   index.ts      # Upstream Pi entry; package manifest owns skill discovery.
@@ -138,7 +139,8 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
    - Pi/OMP (`pi/extension.ts`): `sendMessage(..., { deliverAs: "steer", triggerTurn: true })` queues while busy and starts a model turn while idle. No spool or waiter is needed.
    - DeepSeek Harness (`deepseek/extension.ts`): each exact root `Agent` owns one runtime and tool in `agent.ctx`;
      `agent.steer(createUserMessage(...))` starts an idle turn or injects at a busy turn's next step boundary. Exact
-     Agent object identity fences replacement conversations that reuse a session ID.
+     Agent object identity fences replacement conversations that reuse a session ID, and replacement registration
+     waits for the prior runtime's startup/readiness mutation cleanup barrier.
 
 ## Key behaviors / gotchas
 
