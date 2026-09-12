@@ -1634,6 +1634,9 @@ var MonitorSession = class {
   // Destructive startup work happens before a watch can own the target. Keep
   // it in the session cleanup barrier so a reloaded successor cannot race it.
   startupMutations = /* @__PURE__ */ new Set();
+  // Standalone ready actions have no watch to supply a cleanup barrier. Track
+  // them here so replacement sessions cannot overlap label or merge mutations.
+  standaloneReadinessMutations = /* @__PURE__ */ new Set();
   lifecycleGeneration = 0;
   selfLogin;
   selfLoginPromise;
@@ -1655,6 +1658,16 @@ var MonitorSession = class {
     );
     this.startupMutations.add(barrier);
     void barrier.then(() => this.startupMutations.delete(barrier));
+    return operation;
+  }
+  trackStandaloneReadinessMutation({ mutation }) {
+    const operation = Promise.resolve().then(mutation);
+    const barrier = operation.then(
+      () => void 0,
+      () => void 0
+    );
+    this.standaloneReadinessMutations.add(barrier);
+    void barrier.then(() => this.standaloneReadinessMutations.delete(barrier));
     return operation;
   }
   list() {
@@ -1705,10 +1718,12 @@ var MonitorSession = class {
     this.lifecycleGeneration += 1;
     const entries = [...this.watches.values()];
     const startupMutations = [...this.startupMutations];
+    const standaloneReadinessMutations = [...this.standaloneReadinessMutations];
     for (const entry of entries) entry.watch.stop();
     await Promise.all([
       ...entries.map((entry) => entry.watch.waitUntilStopped()),
-      ...startupMutations
+      ...startupMutations,
+      ...standaloneReadinessMutations
     ]);
     if (notice === void 0) return;
     await Promise.all(
@@ -1917,72 +1932,81 @@ ${resetRace.watch.statusLine()}` };
     try {
       const watchedEntry = this.watches.get(key);
       if (watchedEntry !== void 0) {
-        const text2 = await watchedEntry.watch.manualSetReady(ready);
+        const text = await watchedEntry.watch.manualSetReady(ready);
         return {
-          text: text2,
+          text,
           ready: { target: watchedEntry.watch.target, ready, watched: true }
         };
       }
-      const config = await loadConfig();
-      const acceptedPullRequest = ready && config.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
-      let effectiveReady = ready;
-      let text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel);
-      if (acceptedPullRequest !== void 0) {
-        let revalidatedPullRequest;
-        try {
-          revalidatedPullRequest = await getAutoMergePullRequest({ runGh: this.deps.runGh, target });
-        } catch (error) {
-          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
-            target,
-            config,
-            reason: `the accepted head could not be revalidated after labeling (${error instanceof Error ? error.message : String(error)})`
-          });
-          effectiveReady = !withdrawal.removed;
-          text += `
-${withdrawal.text}`;
-        }
-        if (revalidatedPullRequest !== void 0 && revalidatedPullRequest.headSha !== acceptedPullRequest.headSha) {
-          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
-            target,
-            config,
-            reason: `the PR head changed from ${acceptedPullRequest.headSha} to ${revalidatedPullRequest.headSha} while readiness was being applied`
-          });
-          effectiveReady = !withdrawal.removed;
-          text += `
-${withdrawal.text}`;
-        } else if (revalidatedPullRequest !== void 0) {
-          try {
-            text += `
-${await squashMergePullRequest({
-              runGh: this.deps.runGh,
-              target,
-              pullRequest: revalidatedPullRequest
-            })}`;
-          } catch (error) {
-            if (error instanceof AutoMergeHeadChangedError) {
-              const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
-                target,
-                config,
-                reason: error.message
-              });
-              effectiveReady = !withdrawal.removed;
-              text += `
-${withdrawal.text}`;
-            } else {
-              const failure = autoMergeFailureText({ error });
-              this.deps.log(`auto-merge failed for ${displayKey}: ${error}`);
-              text += `
-${failure}`;
-            }
-          }
-        }
-      }
-      this.notifyReadyChanged({ target, ready: effectiveReady, watched: false, config });
-      return { text, ready: { target, ready: effectiveReady, watched: false } };
+      return await this.trackStandaloneReadinessMutation({
+        mutation: () => this.changeStandaloneReady({ target, ready, loadConfig })
+      });
     } catch (error) {
       const action = ready ? `mark ${displayKey} as ready for human review` : `withdraw the ready-for-human-review label from ${displayKey}`;
       return { text: `Cannot ${action}: ${error.message}` };
     }
+  }
+  async changeStandaloneReady({
+    target,
+    ready,
+    loadConfig
+  }) {
+    const config = await loadConfig();
+    const acceptedPullRequest = ready && config.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
+    let effectiveReady = ready;
+    let text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel);
+    if (acceptedPullRequest !== void 0) {
+      let revalidatedPullRequest;
+      try {
+        revalidatedPullRequest = await getAutoMergePullRequest({ runGh: this.deps.runGh, target });
+      } catch (error) {
+        const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+          target,
+          config,
+          reason: `the accepted head could not be revalidated after labeling (${error instanceof Error ? error.message : String(error)})`
+        });
+        effectiveReady = !withdrawal.removed;
+        text += `
+${withdrawal.text}`;
+      }
+      if (revalidatedPullRequest !== void 0 && revalidatedPullRequest.headSha !== acceptedPullRequest.headSha) {
+        const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+          target,
+          config,
+          reason: `the PR head changed from ${acceptedPullRequest.headSha} to ${revalidatedPullRequest.headSha} while readiness was being applied`
+        });
+        effectiveReady = !withdrawal.removed;
+        text += `
+${withdrawal.text}`;
+      } else if (revalidatedPullRequest !== void 0) {
+        try {
+          text += `
+${await squashMergePullRequest({
+            runGh: this.deps.runGh,
+            target,
+            pullRequest: revalidatedPullRequest
+          })}`;
+        } catch (error) {
+          if (error instanceof AutoMergeHeadChangedError) {
+            const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+              target,
+              config,
+              reason: error.message
+            });
+            effectiveReady = !withdrawal.removed;
+            text += `
+${withdrawal.text}`;
+          } else {
+            const failure = autoMergeFailureText({ error });
+            this.deps.log(`auto-merge failed for ${targetKey(target)}: ${error}`);
+            text += `
+${failure}`;
+          }
+        }
+      }
+    }
+    this.notifyReadyChanged({ target, ready: effectiveReady, watched: false, config });
+    return { text, ready: { target, ready: effectiveReady, watched: false } };
   }
   async withdrawUnsafeStandaloneReadiness({
     target,

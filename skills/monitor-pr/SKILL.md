@@ -20,6 +20,11 @@ needs no GitHub reply.
 
 ## 1. Start monitoring immediately
 
+This workflow must stay with a root conversation that exposes `pr_monitor`. If
+this skill is loaded in a delegated child where that tool is unavailable,
+return the explicit PR target and monitoring request to the parent/root agent.
+Never substitute a sleep, scheduled check, or polling loop in the child.
+
 Right after raising a PR:
 
 ```

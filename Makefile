@@ -5,8 +5,8 @@
 #
 # In order, stopping at the first failure: preflight guards → write the version everywhere and cut the
 # CHANGELOG section (committed to main as "Release vX.Y.Z" when anything changed) → full check matrix →
-# push main → publish both npm packages → verify the registry → create and push the annotated plugin tag.
-# npm versions are immutable, which is why both publishes and both registry checks happen before the tag.
+# push main → publish all three npm packages → verify the registry → create and push the annotated plugin tag.
+# npm versions are immutable, which is why every publish and registry check happens before the tag.
 
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -62,6 +62,7 @@ _publish: _preflight _bump check _push-main _publish-npm _verify-npm _tag
 	@printf '\n$(G)$(B)Released $(TAG)$(N)\n'
 	@printf '  npm     https://www.npmjs.com/package/@sesori/pr-monitor-opencode/v/$(VERSION)\n'
 	@printf '  npm     https://www.npmjs.com/package/@sesori/pr-monitor-pi/v/$(VERSION)\n'
+	@printf '  npm     https://www.npmjs.com/package/@sesori/pr-monitor-deepseek/v/$(VERSION)\n'
 	@printf '  plugin  https://github.com/$(REPO)/releases/tag/$(TAG)\n\n'
 
 ## Refuse to release anything that is not a clean, current main.
@@ -78,9 +79,10 @@ _preflight:
 	@user="$$(npm whoami 2>/dev/null)" || $(call fail,not logged in to npm — run npm login); $(call ok,npm login: $$user)
 	@! npm view @sesori/pr-monitor-opencode@$(VERSION) version >/dev/null 2>&1 || $(call fail,@sesori/pr-monitor-opencode@$(VERSION) is already published)
 	@! npm view @sesori/pr-monitor-pi@$(VERSION) version >/dev/null 2>&1 || $(call fail,@sesori/pr-monitor-pi@$(VERSION) is already published)
+	@! npm view @sesori/pr-monitor-deepseek@$(VERSION) version >/dev/null 2>&1 || $(call fail,@sesori/pr-monitor-deepseek@$(VERSION) is already published)
 	@$(call ok,$(VERSION) is not on the registry yet)
 
-## One version across both npm workspaces, the lockfile, both plugin manifests, the MCP server (and its committed
+## One version across all three npm workspaces, the lockfile, both plugin manifests, the MCP server (and its committed
 ## bundle), and CHANGELOG.md — committed to main only if anything actually changed.
 _bump:
 	@$(call step,2/7 Version $(VERSION) everywhere)
@@ -118,12 +120,14 @@ _publish-npm:
 	@$(call ok,@sesori/pr-monitor-opencode@$(VERSION))
 	@npm publish --workspace @sesori/pr-monitor-pi --access public
 	@$(call ok,@sesori/pr-monitor-pi@$(VERSION))
+	@npm publish --workspace @sesori/pr-monitor-deepseek --access public
+	@$(call ok,@sesori/pr-monitor-deepseek@$(VERSION))
 
 ## The registry's read replicas lag a publish by up to a few minutes, so poll rather than fail on first sight.
 NPM_VERIFY_ATTEMPTS ?= 30   # x 10s = 5 minutes
 _verify-npm:
 	@$(call step,6/7 Verify registry)
-	@for pkg in @sesori/pr-monitor-opencode @sesori/pr-monitor-pi; do \
+	@for pkg in @sesori/pr-monitor-opencode @sesori/pr-monitor-pi @sesori/pr-monitor-deepseek; do \
 	  n=0; until [ "$$(npm view $$pkg@$(VERSION) version 2>/dev/null)" = "$(VERSION)" ]; do \
 	    n=$$((n + 1)); [ $$n -lt $(NPM_VERIFY_ATTEMPTS) ] || $(call fail,$$pkg@$(VERSION) not served after $(NPM_VERIFY_ATTEMPTS) attempts); \
 	    printf '  $(D)waiting for %s@%s to replicate (%d/%d)$(N)\n' "$$pkg" "$(VERSION)" "$$n" "$(NPM_VERIFY_ATTEMPTS)"; sleep 10; \

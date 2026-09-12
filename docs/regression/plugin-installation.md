@@ -2,10 +2,10 @@
 
 ## Capability
 
-One repository publishes two independently installable npm artifacts, one shared Claude Code/Codex Git plugin, and
-one Hermes Git plugin while keeping private core/runtime code in lockstep. OpenCode has its own package; Pi and OMP
-share one package with two entries; Claude Code and Codex share a plugin root; and Hermes installs its self-contained
-subdirectory. Git plugin installs require no build step.
+One repository publishes three independently installable npm artifacts, one shared Claude Code/Codex Git plugin,
+and one Hermes Git plugin while keeping private core/runtime code in lockstep. OpenCode and DeepSeek Harness have
+host-specific packages; Pi and OMP share one package with two entries; Claude Code and Codex share a plugin root;
+and Hermes installs its self-contained subdirectory. Git plugin installs require no build step.
 
 The highest required regression level is **L5 Full** because release confidence depends on exact packed contents,
 real host loaders, package registries/Git installation, and synchronized metadata.
@@ -14,12 +14,12 @@ real host loaders, package registries/Git installation, and synchronized metadat
 
 ### Private workspace root
 
-- The root `package.json` is private at version `0.0.0` and coordinates `opencode/` and `pi/` workspaces. It must not
-  be published and is intentionally excluded from product-version equality.
+- The root `package.json` is private at version `0.0.0` and coordinates `opencode/`, `pi/`, and `deepseek/`
+  workspaces. It must not be published and is intentionally excluded from product-version equality.
 - `core/` and `runtime/` are private implementation source, not a public package. Each npm build bundles reachable
   private modules so a release cannot depend on an unpublished core version.
-- OpenCode/Pi `dist/` and generated package skill copies are ephemeral and ignored. The Claude/Codex MCP bundle and
-  Hermes worker/tool/skill artifacts are committed because Git plugin installation runs no build.
+- OpenCode/Pi/DeepSeek `dist/` and generated package skill copies are ephemeral and ignored. The Claude/Codex MCP
+  bundle and Hermes worker/tool/skill artifacts are committed because Git plugin installation runs no build.
 
 ### `@sesori/pr-monitor-opencode`
 
@@ -87,6 +87,41 @@ skills/monitor-pr/SKILL.md
 - `package.json#pi` declares the upstream entry and skill. `package.json#omp` declares only the OMP entry because
   OMP's `resources_discover` handler supplies the same skill path exactly once.
 
+### `@sesori/pr-monitor-deepseek`
+
+Install into DeepSeek Harness's long-lived Web profile:
+
+```sh
+npx @deepseek-ai/dsh@0.1.5-rc.2 plugin --profile web add @sesori/pr-monitor-deepseek
+```
+
+Required floor: DeepSeek Harness 0.1.5-rc.2 on Node.js 22.19+, plus authenticated `gh`. Harness is a developer
+preview, so breaking host changes require renewed loader and model-driven evidence.
+
+The tarball contains exactly:
+
+```text
+LICENSE
+README.md
+cordis.patch.yml
+dist/index.d.ts
+dist/index.js
+package.json
+skills/monitor-pr/SKILL.md
+```
+
+- Runtime exports are exactly `name`, `inject`, and `apply`; `deepseek/tsconfig.build.json` scopes declaration
+  generation to that source entry and its reachable graph. Host SDK imports stay external as `"*"` peers while
+  build-time declarations stay pinned to the supported floor. Harness resolves those peers through its profile
+  loader; making `dsh-tools` a local dependency risks a duplicate scheduler-symbol realm.
+- `package.json#dsh.bundle.patch` points to `cordis.patch.yml`, which inserts exactly one
+  `@sesori/pr-monitor-deepseek` plugin into the selected profile. DeepSeek does not convention-scan plugin folders.
+- `ctx.skills.registerProvider()` publishes the canonical skill at `BUNDLED_SKILL_RANK`; copied content must exactly
+  match `skills/monitor-pr/SKILL.md`, while returned provider content omits YAML frontmatter. Because this bundle
+  layer is host-global and the tool is root-only, canonical instructions send delegated children back to root.
+- Each root Agent owns its tool/runtime through Agent-scoped Cordis effects. Installation creates no daemon or
+  persisted watch state. The adapter reads no project configuration because Harness exposes no project-trust proof.
+
 ### Claude Code Git plugin
 
 Install from the marketplace:
@@ -124,8 +159,8 @@ src/spool.ts
   `${CLAUDE_PLUGIN_ROOT}` and must not depend on the repository's checkout depth.
 - `claude-codex/dist/mcp-server.mjs` is committed and must reproduce from `claude-codex/src/`, `runtime/`, and `core/`.
   Hooks remain dependency-free source and are not part of that esbuild bundle.
-- The conventional Claude skill is waiter-aware and intentionally differs from the canonical OpenCode/Pi/OMP
-  push-host skill. Each installed host still discovers exactly one `monitor-pr` skill.
+- The conventional Claude skill is waiter-aware and intentionally differs from the canonical
+  OpenCode/Pi/OMP/DeepSeek push-host skill. Each installed host still discovers exactly one `monitor-pr` skill.
 
 ### Codex plugin
 
@@ -165,6 +200,7 @@ One product version must match across:
 
 - `opencode/package.json` and its `package-lock.json` workspace entry;
 - `pi/package.json` and its lockfile workspace entry;
+- `deepseek/package.json` and its lockfile workspace entry;
 - `claude-codex/.claude-plugin/plugin.json`;
 - `claude-codex/.codex-plugin/plugin.json`; and
 - the MCP server version in `claude-codex/src/mcp-server.ts`.
@@ -175,11 +211,11 @@ The private root stays `0.0.0`. `npm run version:check` rejects any product drif
 From a clean release commit:
 
 1. Complete every required matrix row below from the clean release commit, including minimum/current OpenCode,
-   Pi, and OMP loaders and the live Claude release-host session. Run test/type/build/version/pack/host checks and
-   confirm rebuilding leaves the committed Claude bundle clean.
-2. Publish both npm workspaces only after the complete matrix is `Pass`. A failure stops the release before any Git
-   tag is created.
-3. Create and push one annotated `vX.Y.Z` tag for the Claude Git plugin only after both npm publishes succeed.
+   Pi, OMP, and DeepSeek Harness loaders and the live Claude release-host session. Run
+   test/type/build/version/pack/host checks and confirm rebuilding leaves the committed Claude bundle clean.
+2. Publish all three npm workspaces only after the complete matrix is `Pass`. A failure stops the release before any
+   Git tag is created.
+3. Create and push one annotated `vX.Y.Z` tag for the Claude Git plugin only after all npm publishes succeed.
 
 npm versions are immutable. First publication also requires permission to create public packages in the `@sesori`
 scope, so package name/version/access and exact tarball contents must be checked before publishing.
@@ -192,22 +228,25 @@ absolute `XDG_CONFIG_HOME` equivalent) and project `.pr-monitor.json`; host proj
 - OpenCode: project/worktree `.opencode/pr-monitor.json`;
 - Claude Code: `.claude/pr-monitor.json`, then `.opencode/pr-monitor.json`;
 - Hermes: `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`;
-- trusted Pi/OMP: `${CONFIG_DIR_NAME}/pr-monitor.json`, then `.opencode/pr-monitor.json`.
+- trusted Pi/OMP: `${CONFIG_DIR_NAME}/pr-monitor.json`, then `.opencode/pr-monitor.json`;
+- DeepSeek Harness: no project candidates; user-global config only.
 
-Pi must not read project-local configuration before project trust, but may read user-global config. Package
-installation must not create a daemon,
+Pi must not read project-local configuration before project trust, but may read user-global config. DeepSeek must
+not read project-local configuration or invoking-project `.env` values until its public host API supplies trustworthy
+project approval evidence. Its environment override must use inherited-process or Harness-home user provenance.
+Package installation must not create a daemon,
 persistent watch registry, credential file, copied repository skill, or host-specific core package.
 
 ## Regression Levels
 
-- **L1 Smoke:** Root stays private; both workspace manifests and the Claude plugin manifest parse; expected source
-  entries exist.
-- **L2 Routine:** Builds emit typed entries and exact skill copies; version, license, export, dependency, and
-  committed-bundle checks pass.
-- **L3 Release:** Both npm tarballs install in disposable consumers; every export/manifest imports; Claude MCP starts
-  over stdio and hooks parse.
-- **L4 Extended:** Actual minimum/current OpenCode, Pi, and OMP loaders discover one tool/skill on required OS rows;
-  Claude installs from a checkout.
+- **L1 Smoke:** Root stays private; all three workspace manifests and the Claude plugin manifest parse; expected
+  source entries exist.
+- **L2 Routine:** Builds emit typed entries and exact skill copies; version, license, export, dependency, Cordis patch,
+  and committed-bundle checks pass.
+- **L3 Release:** All three npm tarballs install in disposable consumers; every export/manifest imports; Claude MCP
+  starts over stdio and hooks parse.
+- **L4 Extended:** Actual minimum/current OpenCode, Pi, OMP, and DeepSeek loaders discover one tool/skill on required
+  OS rows; Claude installs from a checkout.
 - **L5 Full:** Registry-equivalent tarballs and the Claude Git root run cross-host monitoring; publish
   ordering/version evidence and cleanup are recorded.
 
@@ -218,8 +257,10 @@ persistent watch registry, credential file, copied repository skill, or host-spe
   MCP/hook checks on the CI host.
 - **Pi:** minimum/current loaders on Linux and macOS plus Windows loader/package smoke.
 - **OMP:** minimum/current compatibility loaders on Linux and macOS plus Windows loader/package smoke.
-- **Release contents:** both tarballs, the Claude plugin root, lockstep metadata, generated-skill equality, license
-  equality, dependency closure, and reproducible bundles from one clean commit.
+- **DeepSeek Harness:** 0.1.5-rc.2/current Web-profile composition and model-driven Agent tool/skill delivery on
+  Linux and macOS plus Windows package/profile smoke.
+- **Release contents:** all three tarballs, the Claude plugin root, lockstep metadata, generated-skill equality,
+  license equality, dependency closure, Cordis patch composition, and reproducible bundles from one clean commit.
 
 A loader/source check proves only its named host and platform. npm pack output without a disposable install does not
 prove exports or peer closure. A local Claude source run does not prove the committed Git plugin artifact.
@@ -228,7 +269,8 @@ prove exports or peer closure. A local Claude source run does not prove the comm
 
 Vary global versus project installation, pinned versus unpinned npm specs, clean versus warm host package caches,
 paths containing spaces/shell metacharacters, and host reload after installation. Inspect archives rather than the
-working tree. Exercise both Pi entries from one tarball and verify no host discovers both skill mechanisms.
+working tree. Exercise both Pi entries from one tarball, compose the DeepSeek patch into a disposable profile, and
+verify no host discovers both skill mechanisms.
 
 For release rehearsal, vary a deliberately mismatched manifest/lock/MCP version, a missing generated skill, a changed
 license, a stale Claude bundle, a missing peer, and an npm publish failure before tag creation.
@@ -237,11 +279,13 @@ license, a stale Claude bundle, a missing peer, and an npm publish failure befor
 
 - The private root can publish, an npm archive contains source/private modules or omits a declared entry, or a packed
   consumer requires undeclared local files.
-- OpenCode exports anything besides `PrMonitorPlugin`; Pi/OMP entries are untyped or load separate monitor cores.
-- A package omits or duplicates `monitor-pr`, OMP receives both manifest and resource-discovered copies, or Claude
-  receives the push-host skill without waiter instructions.
+- OpenCode exports anything besides `PrMonitorPlugin`; Pi/OMP entries are untyped or load separate monitor cores;
+  DeepSeek exports an unexpected symbol, bundles host SDKs, or lacks a valid `dsh.bundle.patch`.
+- A package omits or duplicates `monitor-pr`, OMP receives both manifest and resource-discovered copies, DeepSeek
+  registers above bundled rank or returns frontmatter as prompt content, or Claude receives the push-host skill
+  without waiter instructions.
 - Product versions diverge, unreleased behavior is attributed to an already published version, or a release tag is
-  created before both npm artifacts succeed.
+  created before all three npm artifacts succeed.
 - Rebuilding changes the committed Claude bundle unexpectedly, generated npm output is committed, or a plugin path
   works only from the source checkout.
 
@@ -255,10 +299,11 @@ license, a stale Claude bundle, a missing peer, and an npm publish failure befor
 
 ## Sources
 
-`package.json`, `package-lock.json`, `opencode/package.json`, `pi/package.json`,
-`claude-codex/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `claude-codex/.mcp.json`,
-`scripts/build-*.mjs`, `scripts/check-pack.mjs`, `scripts/check-versions.mjs`, `scripts/check-*-loader.mjs`,
-`skills/monitor-pr/SKILL.md`, `opencode/index.ts`, `pi/index.ts`, `pi/omp.ts`, and `AGENTS.md`.
+`package.json`, `package-lock.json`, `opencode/package.json`, `pi/package.json`, `deepseek/package.json`,
+`deepseek/cordis.patch.yml`, `claude-codex/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+`claude-codex/.mcp.json`, `scripts/build-*.mjs`, `scripts/check-pack.mjs`, `scripts/check-versions.mjs`,
+`scripts/check-*-loader.mjs`, `scripts/run-*-loader-check.mjs`, `skills/monitor-pr/SKILL.md`, `opencode/index.ts`,
+`pi/index.ts`, `pi/omp.ts`, `deepseek/index.ts`, and `AGENTS.md`.
 
 ## Hermes Git plugin
 

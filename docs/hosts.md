@@ -14,6 +14,7 @@ plugin is running: how reports reach the agent, when monitors stop, and what to 
 | Codex | Spooled and injected by trusted hooks, per conversation | PR done, Codex restart |
 | Pi | Native custom message that can start a turn | PR done, successful session new/resume/fork/reload |
 | Oh My Pi | Native custom message that can start a turn | PR done, successful session switch |
+| DeepSeek Harness | Native steer into the exact root Agent | PR done, Agent disposal, bundle unload, host quit |
 | Hermes | Background turn in the original Desktop/TUI conversation | PR done, conversation reset, host quit |
 
 "PR done" means merged or closed. On every host, monitors live in memory and need starting again after the host
@@ -107,6 +108,24 @@ custom-message delivery, and the same skill is discovered.
 
 A successful session switch stops the old monitors. A canceled switch keeps them. Package details:
 [`pi/README.md`](../pi/README.md).
+
+## DeepSeek Harness
+
+DeepSeek Harness support targets its long-lived Web profile. Every root Agent receives its own tool and monitor
+registry. Reports use native `agent.steer(...)` delivery: an idle conversation starts a turn, while a busy one gets
+the report at its next step boundary. Exact Agent identity keeps other conversations and replacement Agents with a
+reused session ID from receiving those reports. A replacement's tool appears only after the prior runtime's
+in-flight startup or watched/standalone readiness mutation cleanup drains.
+
+Disposing the Agent, unloading the bundle, or stopping Harness cancels its monitors. They are not restored when a
+persisted conversation resumes in another process. Harness's bundled skill catalog is host-global, so a delegated
+child may discover `monitor-pr` without receiving the root-only tool. The skill tells it to return the PR target and
+monitoring request to its parent/root instead of trying to poll or wait itself.
+
+Harness exposes no project-trust signal to Cordis plugins. PR Monitor therefore ignores repository config files and
+invoking-project `.env` values. It reads user-global configuration and accepts the auto-merge environment override
+only from the inherited process or Harness-home user environment. Package details:
+[`deepseek/README.md`](../deepseek/README.md).
 
 ## Hermes
 

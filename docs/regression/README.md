@@ -26,7 +26,7 @@ Use the shortest boundary that observes the complete invariant:
 |---|---|
 | Automated | Pure state, parsing, report rendering, deterministic timing, and error rollback. |
 | Adapter contract | Host API registration, delivery options, session ownership, and lifecycle using controlled fakes. |
-| Actual host | A real OpenCode, Claude Code, Codex, Pi, OMP, or Hermes loader/session must interpret or deliver the behavior. |
+| Actual host | A real OpenCode, Claude Code, Codex, Pi, OMP, Hermes, or DeepSeek Harness loader/session must interpret or deliver the behavior. |
 | Packaged or external | npm/Git installation, release contents, GitHub, or another production service is part of the claim. |
 
 A source import does not prove a packed artifact. A fake host does not prove actual loader compatibility. One host
@@ -38,7 +38,7 @@ Every required row names the dimensions that affect its claim:
 
 - **boundary:** automated, adapter contract, actual host, or packaged/external;
 - **artifact:** source tree, generated bundle, npm tarball/install, Claude/Codex Git plugin root, or Hermes plugin;
-- **host/version:** OpenCode, Claude Code, Codex, Pi, OMP, Hermes, GitHub CLI, and every minimum/current version the
+- **host/version:** OpenCode, Claude Code, Codex, Pi, OMP, Hermes, DeepSeek Harness, GitHub CLI, and every minimum/current version the
   feature names;
 - **platform/runtime:** operating system plus Node/Bun/host runtime where behavior can differ;
 - **variation:** normal, failure, lifecycle, race, recovery, trust, config, or compatibility path; and
@@ -71,12 +71,13 @@ name the owning source/tests, highest level, proof boundary, and required host/p
 ## Feature Index
 
 - [`hermes.md`](hermes.md) — Hermes tool, delivery, lifecycle, packaged worker, and actual-host acceptance.
-
+- [`deepseek.md`](deepseek.md) — DeepSeek Cordis bundle, root-Agent delivery, lifecycle, skill, config, and host acceptance.
 - [`pull-request-monitoring.md`](pull-request-monitoring.md) — shared watch/activity/report semantics, autonomous
   ownership, ready-label handoff, host delivery/lifecycle, and configuration. Highest level: L5; primary boundaries:
   automated through packaged/external.
-- [`plugin-installation.md`](plugin-installation.md) — OpenCode and Pi/OMP npm archives, the shared Claude/Codex Git
-  plugin root, Hermes Git-plugin artifacts, exactly-once skill discovery, loader compatibility, release metadata,
+- [`plugin-installation.md`](plugin-installation.md) — OpenCode, Pi/OMP, and DeepSeek npm archives, the shared
+  Claude/Codex Git plugin root, Hermes Git-plugin artifacts, exactly-once skill discovery, loader compatibility,
+  release metadata,
   and publish order. Highest level: L5; primary boundaries: packaged/actual-host/external.
 
 A behavior appearing in both files is not duplicate evidence: monitoring proves the runtime outcome, while

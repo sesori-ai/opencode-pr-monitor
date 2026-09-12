@@ -4,8 +4,8 @@
 
 A coding-agent session can watch explicit GitHub pull requests, receive readiness-aware `[PR Monitor]` reports when
 head, review, comment, CI, mergeability, or terminal state changes, and automatically manage a handoff label.
-OpenCode, Claude Code, Codex, Pi, OMP, and Hermes share the same per-PR state machine and session runtime while
-retaining host-native delivery and lifecycle ownership.
+OpenCode, Claude Code, Codex, Pi, OMP, Hermes, and DeepSeek Harness share the same per-PR state machine and session
+runtime while retaining host-native delivery and lifecycle ownership.
 
 The highest required regression level is **L5 Full** because the complete claim crosses published artifacts, real
 host loaders, authenticated GitHub state, and ready-label mutation.
@@ -72,9 +72,11 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 
 - `autoMerge: true` may enable auto-merge in user-global or trusted project config. Global config is
   `~/.config/pr-monitor/config.json`, or `$XDG_CONFIG_HOME/pr-monitor/config.json` when that environment variable is
-  an absolute path. Project config overrides global config.
+  an absolute path. Project config overrides global config on hosts with project-trust evidence. DeepSeek Harness
+  supplies no such evidence, so it never loads project config or invoking-project `.env` values.
 - An explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE` overrides both config layers: `true`/`1` enables and
-  `false`/`0`/empty disables. Any other value fails closed, disables auto-merge, and logs a warning.
+  `false`/`0`/empty disables. Any other value fails closed, disables auto-merge, and logs a warning. DeepSeek resolves
+  the value only from inherited-process or Harness-home user provenance, never the invoking project's `.env`.
 - Only successfully completed readiness transitions performed by the monitor and successful `mark_ready` actions
   trigger one merge attempt. Observing an externally added ready label does not; neither does observing readiness
   after a failed/ambiguous label mutation. Both watched and standalone `mark_ready` are covered.
@@ -102,6 +104,8 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   fresh assessment plus an explicit `mark_ready` if the PR is ready. When startup announcements are disabled, the
   start result remains the notice. Startup never merges merely from stale or externally observed label state. The
   reset is lifecycle-owned work that session cleanup drains before a reloaded successor may mutate the same PR.
+  Cleanup also drains standalone `mark_ready` and `unmark_ready` operations, including an auto-merge attempt, before
+  a successor session can expose another mutation path.
 - Unchanged polls or a flush of unchanged initial state do not add the label. Later observed CI completion and
   feedback handling retain automatic readiness, including when that activity arrives before a failed initial
   delivery is retried or manually flushed.
@@ -191,16 +195,34 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   watches. Canceled before-events retain the active watch.
 - `resources_discover` returns exactly one packaged skill path. It must not duplicate Pi manifest discovery.
 
+### DeepSeek Harness 0.1.5-rc.2 or newer
+
+- A native Cordis bundle, not MCP, registers one `pr_monitor` tool inside every root Agent context. Child Agents do
+  not receive an independent monitor runtime or timer.
+- Reports are plugin-authored user messages delivered by `agent.steer()`. An idle Agent starts a turn; a busy Agent
+  receives the report at its next step boundary. Exact Agent object identity—not only session ID—owns delivery.
+- Agent-scoped effects stop watches and remove tools on conversation disposal. Plugin unload drains every Agent
+  cleanup. A replacement Agent with a reused ID remains tool-less until the prior runtime's startup/readiness
+  mutation cleanup drains, then starts empty. Process restart does not restore watches.
+- `ctx.skills.registerProvider()` exposes exactly one canonical `monitor-pr` skill at `BUNDLED_SKILL_RANK`, allowing
+  higher-ranked project and user providers to override it.
+- Harness exposes no public project-trust signal. Load user-global config and only inherited-process or Harness-home
+  user-provenance environment overrides; exclude project candidates and invoking-project `.env` values. Installation
+  uses package `dsh.bundle.patch` metadata in a selected profile.
+
 ## Configuration Matrix
 
-All hosts apply defaults, then user-global `~/.config/pr-monitor/config.json` (or an absolute XDG override), then
-its first readable project candidate. Every host prefers repository `.pr-monitor.json`; remaining candidates are:
+All hosts apply defaults, then user-global `~/.config/pr-monitor/config.json` (or an absolute XDG override). Hosts
+with project-trust evidence then apply their first readable project candidate. Those hosts prefer repository
+`.pr-monitor.json`; remaining candidates are:
 
 - OpenCode: project/worktree `.opencode/pr-monitor.json` fallbacks.
 - Claude Code: `.claude/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 - Hermes: `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 - Trusted Pi and OMP: `${CONFIG_DIR_NAME}/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 - Untrusted Pi: defaults plus user-global config; no project-local monitor file is read.
+- DeepSeek Harness: user-global config plus provenance-safe process/user environment values only; no project-trust
+  signal, project candidate, or invoking-project `.env` input exists.
 
 Pi and OMP select config candidates from each `start` and standalone ready action's current cwd/trust context;
 creating the session runtime with an earlier `status` call must not pin a different project. OpenCode and Claude
@@ -220,10 +242,11 @@ overrides both JSON layers.
   debounce/hold/urgency, report baselines, mutation/delivery retry, global/project/environment config layering,
   head-fenced title-only auto-merge calls, startup reset, actions, races, and timer cleanup on Node 22 across Linux,
   macOS, and Windows.
-- **L3 Release:** Shared-session adapter contracts represent OpenCode, Claude, Pi, and OMP. Packed OpenCode plus
-  bundled Claude checks cover owning-session delivery, reload/process lifecycle, spool/hook injection, and handoff.
-- **L4 Extended:** Actual minimum and current Pi/OMP loaders, busy/idle steering, trust/config paths, successful and
-  canceled transitions, and required OS rows.
+- **L3 Release:** Shared-session adapter contracts represent OpenCode, Claude, Pi, OMP, and DeepSeek. Packed
+  OpenCode/DeepSeek plus bundled Claude checks cover owning-session delivery, reload/process lifecycle,
+  spool/hook injection, bundle metadata, and handoff.
+- **L4 Extended:** Actual minimum and current Pi/OMP/DeepSeek loaders, busy/idle steering, trust/config paths,
+  successful and canceled transitions, and required OS rows.
 - **L5 Full:** Packaged hosts against an authenticated disposable GitHub PR: initial/ordinary/urgent/terminal
   reports, handoff/withdrawal, config/environment-enabled auto-merge plus marker creation, and cleanup.
 
@@ -246,16 +269,17 @@ reconciliation, cleanup failure, and marker-label failure.
   warning needed to distinguish new human feedback from an earlier agent reply.
 - A failed label mutation changes handoff, a plain issue is labeled as a PR, a resolution-only report withdraws
   readiness, or a manual mark is immediately undone by state it explicitly accepted.
-- Global config does not reach every host, project config fails to override it, an explicit environment value fails
-  to override both, or untrusted Pi reads project-local config. Startup auto-merges or preserves a stale ready label
+- Global config does not reach every host, project config fails to override it where supported, an explicit
+  environment value fails to override loaded config, untrusted Pi reads project-local config, or DeepSeek reads any
+  project-local config or invoking-project `.env` value. Startup auto-merges or preserves a stale ready label
   while auto-merge is enabled; a merge is not head-fenced; squash commit body is non-empty; a definitive rejection
   becomes unknown; an indeterminate result is retried or declared failed without reconciliation; ordinary merge
   failure removes readiness; stale standalone authorization remains ready without a surfaced cleanup attempt; or
   marker failure falsely reports a successful merge as failed.
 - A canceled session transition loses a watch, a successful transition retains an old timer, or an old session
-  delivers into/removes readiness from a successor watch.
-- An agent creates a second wait/poll mechanism, Pi/OMP fails to trigger an idle turn, or a host discovers duplicate
-  `monitor-pr` skills.
+  delivers into/removes readiness from a successor watch or overlaps its standalone readiness mutation.
+- An agent creates a second wait/poll mechanism, Pi/OMP/DeepSeek fails to trigger an idle turn, DeepSeek registers a
+  child-Agent monitor or retargets a same-ID replacement, or a host discovers duplicate `monitor-pr` skills.
 
 ## Known Limitations
 
@@ -276,5 +300,5 @@ reconciliation, cleanup failure, and marker-label failure.
 `core/watch.ts`, `core/activity.ts`, `core/readiness.ts`, `core/report.ts`, `core/github.ts`, `core/label.ts`,
 `core/merge.ts`,
 `runtime/monitor-session.ts`, `runtime/tool.ts`, `opencode/index.ts`, `claude-codex/src/`, `claude-codex/hooks/`,
-`pi/extension.ts`, `pi/index.ts`, `pi/omp.ts`, `skills/monitor-pr/SKILL.md`,
+`pi/extension.ts`, `pi/index.ts`, `pi/omp.ts`, `deepseek/extension.ts`, `skills/monitor-pr/SKILL.md`,
 `claude-codex/skills/monitor-pr/SKILL.md`, and `test/*.test.ts`.

@@ -6,8 +6,8 @@ Quick orientation for agents working on this repo. Read this before exploring; i
 
 `pr-monitor` is a GitHub PR watcher that posts factual status updates back into the owning agent session. It targets
 **OpenCode** (`opencode/`), **Claude Code and Codex** (`claude-codex/`, one plugin root serving both hosts), the shared
-**Pi/OMP** package (`pi/`), and **Hermes** (`hermes/`), all built on the same core (`core/`) and session runtime
-(`runtime/`).
+**Pi/OMP** package (`pi/`), **DeepSeek Harness** (`deepseek/`), and **Hermes** (`hermes/`), all built on the same core
+(`core/`) and session runtime (`runtime/`).
 
 ## Project layout
 
@@ -41,6 +41,14 @@ opencode/            # OpenCode source plus publishable npm workspace.
   gh.ts        # OpenCode's injected Bun-shell GhRunner.
   package.json # @sesori/pr-monitor-opencode; exports the generated dist/index.js bundle.
   dist/        # Ephemeral JS bundle + sole-export declaration, ignored; never commit.
+
+deepseek/            # @sesori/pr-monitor-deepseek native Cordis bundle.
+  index.ts     # Sole public package entry: name, inject, apply.
+  extension.ts # One MonitorSession/tool per exact root Agent; native steer delivery and bundled skill provider.
+  cordis.patch.yml # dsh.bundle.patch inserts the plugin into a selected Harness profile.
+  tsconfig.build.json # Scopes declaration generation to the DeepSeek entry and its reachable graph.
+  dist/        # Ephemeral npm bundle and declaration; ignored; never commit.
+  skills/      # Generated monitor-pr skill copy; ignored; never commit.
 
 pi/                  # @sesori/pr-monitor-pi workspace shared by upstream Pi and OMP.
   index.ts      # Upstream Pi entry; package manifest owns skill discovery.
@@ -130,6 +138,10 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
      (one file per report under `~/.claude/pr-monitor/spool/<claude pid>/`) with the plugin's hooks injecting
      spooled text at the next UserPromptSubmit / PostToolUse / Stop event, guarded by the keep-alive loop (below).
    - Pi/OMP (`pi/extension.ts`): `sendMessage(..., { deliverAs: "steer", triggerTurn: true })` queues while busy and starts a model turn while idle. No spool or waiter is needed.
+   - DeepSeek Harness (`deepseek/extension.ts`): each exact root `Agent` owns one runtime and tool in `agent.ctx`;
+     `agent.steer(createUserMessage(...))` starts an idle turn or injects at a busy turn's next step boundary. Exact
+     Agent object identity fences replacement conversations that reuse a session ID, and replacement registration
+     waits for the prior runtime's startup or watched/standalone readiness mutation cleanup barrier.
 
 ## Key behaviors / gotchas
 
@@ -147,10 +159,19 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
 - **Stop/mutation fencing** — a stopped watch rejects queued flush/ready actions and remains registered until an
   already-started readiness operation drains. An auto-merge already in flight drains; if stop wins while the label
   call is pending, `stopped` fences the not-yet-started follow-on merge. A pre-registration stale-label reset is
-  tracked separately in the session cleanup barrier so reload takeover awaits it. Cleanup does not await stalled
-  fetches or deliveries; `stopped`/generation checks fence their continuations before a successor is mutated.
+  tracked separately in the session cleanup barrier so reload takeover awaits it. Standalone `mark_ready` and
+  `unmark_ready` mutations use the same barrier because no watch owns them. Cleanup does not await stalled fetches
+  or deliveries; `stopped`/generation checks fence their continuations before a successor is mutated.
 - **Sessions, Claude Code shell**: one MCP server process per Claude Code process, so the watches map IS the session scope. Monitors survive `/clear` (same process) and die with the process. Spool routing: spool dirs are named by the owning Claude Code pid (= MCP server's ppid); the hook drains dirs named by its parent/grandparent pid (hook ← sh ← claude; deliberately NOT the full ancestry, which would let a nested claude session steal the outer session's reports) and GCs dead-pid dirs. Ancestry is read from `/proc` where it exists, else `ps`; with neither the hook drains **nothing** — the number of live spools is not evidence of ownership (a session with no monitor still fires hooks), so there is no cardinality trick that substitutes for real ancestry. A pid is not an identity either — the OS recycles them — so `claimSpool` records the Claude Code process's start time in `<spool dir>/owner` (tmp+rename; a torn read must not look like a foreign token) at server startup, and it is enforced in three places: the server discards anything it cannot prove it inherited before spooling (a foreign token *and* an untokened dir, since stamping the latter would launder a vanished session's reports); `spoolReport` re-checks the token before every write, so an orphaned server whose parent's pid got recycled cannot write into the newcomer's spool; the hook *skips* — never deletes — a dir whose token mismatches, because deleting would race the newcomer's `claimSpool`. On macOS the token is `ps -o lstart=` (1-second resolution), a deliberate residue: coarser than ideal, but calling macOS unverifiable would restore pid-only routing there, which is strictly worse. Report filenames carry the *server* pid too (`seq` restarts at 0 in each process while the dir outlives them, so an /mcp restart could otherwise collide within a millisecond and lose a report). Drains claim each report via unlink-before-emit so concurrent hook invocations never deliver one twice, and the script must not process.exit after writing (stdout past the 64KB pipe buffer would be truncated). PostToolUse also fires for tool calls inside Task subagents — those hook inputs carry `agent_id`, and drain-spool.mjs skips them so a report is never consumed by a subagent's context (verified empirically on Claude Code 2.1.216). Shutdown (stdin EOF/SIGTERM) spools a `Monitor stopped` notice per watch — delivered if the same process continues (server restart), silently GC'd if the session is gone.
 - **Reload takeover, opencode shell** — `globalThis.__sesoriPrMonitorTakeovers` kills zombie timers from prior plugin instances; old watches send one factual stop notice. (`session.deleted` stops matching watches silently.) Graceful `dispose` cannot use `promptAsync`: OpenCode acknowledges that endpoint before its fork persists the message, then disposal cancels the fork. Shutdown uses synchronous `session.prompt` with `noReply: true`, persisting each notice before disposal without starting a model turn.
+- **DeepSeek Harness lifecycle** — the native Cordis bundle listens for `agent/created`, ignores child Agents,
+  registers each tool/runtime with `agent.ctx.effect`, and stops watches on root-Agent disposal or plugin unload.
+  Process restart does not restore watches. DeepSeek Harness is a developer preview; source and package contracts
+  target 0.1.5-rc.2. Harness exposes no project-trust signal, so the adapter loads only user-global config and
+  inherited-process or Harness-home user-provenance environment values. Invoking-project `.env` and config files are
+  excluded; never add project-controlled inputs without trustworthy host evidence. The bundled skill provider is
+  host-global, so its canonical instructions tell delegated children without `pr_monitor` to hand ownership back to
+  the root instead of inventing a waiter.
 - **Pi-family lifecycle** — upstream Pi tears down the old extension instance and emits post-success
   `session_shutdown` on new/resume/fork/reload, so common cleanup lives there. OMP retains its extension runner and
   uses the thin `pi/omp-adapter.ts` post-success `session_switch` handler. Neither adapter clears on cancelable
@@ -212,7 +233,9 @@ candidates with
 `.pr-monitor.json`; OpenCode falls back to project/worktree `.opencode/pr-monitor.json`; Claude Code uses `.claude/`
 then `.opencode/`; Hermes uses `.hermes/` then `.opencode/`; trusted Pi/OMP use
 `${CONFIG_DIR_NAME}/pr-monitor.json` then `.opencode/`. OMP's compatibility shim resolves the config directory to
-`.omp`; do not replace it with a hardcoded host branch.
+`.omp`; do not replace it with a hardcoded host branch. DeepSeek supplies no project candidates because its public
+plugin API has no project-trust proof. It resolves configuration environment values through
+`launchEnvironmentOf(ctx).getFrom(..., ["process", "user-env"])`, never flattened project `.env` state.
 `MonitorConfig` contains common settings; `ClaudeMonitorConfig` adds `desktopNotifications`, `keepAlive`, and
 `keepAliveMaxMinutes`. Unknown keys are ignored, invalid values leave the lower layer unchanged, invalid JSON is
 logged, and missing files use lower layers/defaults. An explicit auto-merge environment value overrides config.
@@ -245,9 +268,11 @@ only at the start of a comment.
 - Always update `CHANGELOG.md` in the same PR as every change, including documentation and agent/skill
   instructions. Add a concise, factual entry under `[Unreleased]` in the appropriate category; do not defer it
   until release or a follow-up PR.
-- The root is a private npm workspace coordinator. `npm run build` produces ephemeral OpenCode and Pi/OMP bundles with private core/runtime embedded and rebuilds committed `claude-codex/dist/mcp-server.mjs`. Host SDKs remain external. Claude plugin installs run no build, so rebuild + commit its bundle whenever `claude-codex/src/`, `runtime/`, or `core/` changes; never commit OpenCode/Pi dist or generated package skill copies.
+- The root is a private npm workspace coordinator. `npm run build` produces ephemeral OpenCode, Pi/OMP, and DeepSeek bundles with private core/runtime embedded and rebuilds committed `claude-codex/dist/mcp-server.mjs`. Host SDKs remain external. Claude plugin installs run no build, so rebuild + commit its bundle whenever `claude-codex/src/`, `runtime/`, or `core/` changes; never commit OpenCode/Pi/DeepSeek dist or generated package skill copies.
 - `claude-codex/hooks/drain-spool.mjs` and `claude-codex/hooks/await-activity.mjs` must stay dependency-free (node builtins only) and keep their path/format schemes in sync with `claude-codex/src/spool.ts` and `claude-codex/src/session-state.ts`. They are shipped as source, not bundled — only `claude-codex/src/` goes through esbuild.
-- `claude-codex/skills/monitor-pr/SKILL.md` is Claude's waiter-aware behavior layer. `skills/monitor-pr/SKILL.md` is the canonical push-host behavior layer copied into both npm artifacts. OpenCode injects its generated directory through `config.skills.paths`, Pi uses `package.json#pi.skills`, and OMP returns it from `resources_discover`; each host must discover exactly one `monitor-pr` skill.
-- Pi host imports stay external and use `"*"` peer ranges exactly as upstream package guidance requires. Supported
-  host floors are enforced by documentation/loader checks; narrowing the peers would conflict with OMP rewriting.
-- One version spans both npm workspaces and the Claude manifest (`npm run version:check`). `npm run pack:check` creates both tarballs, enforces exact contents/skills, installs them, and imports every export. Publish both workspaces from a clean commit; only after npm succeeds create/push the annotated Claude release tag.
+- `claude-codex/skills/monitor-pr/SKILL.md` is Claude's waiter-aware behavior layer. `skills/monitor-pr/SKILL.md` is the canonical push-host behavior layer copied into all three npm artifacts. OpenCode injects its generated directory through `config.skills.paths`, Pi uses `package.json#pi.skills`, OMP returns it from `resources_discover`, and DeepSeek registers it through `ctx.skills.registerProvider()` at `BUNDLED_SKILL_RANK`; each host must discover exactly one `monitor-pr` skill.
+- Pi and DeepSeek host imports stay external and use `"*"` peer ranges exactly as upstream package guidance requires.
+  Supported host floors are enforced by documentation/loader checks; narrowing Pi peers would conflict with OMP
+  rewriting. DeepSeek resolves peers through its profile loader; making `dsh-tools` a dependency can create a second
+  scheduler-symbol realm and break every tool call. Plain Node import from a profile bypasses that loader.
+- One version spans all three npm workspaces and the Claude manifest (`npm run version:check`). `npm run pack:check` creates all three tarballs, enforces exact contents/skills, installs them, and imports every export. Publish all three workspaces from a clean commit; only after npm succeeds create/push the annotated Claude release tag.

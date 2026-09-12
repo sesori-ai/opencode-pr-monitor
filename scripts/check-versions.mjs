@@ -5,6 +5,7 @@ const manifests = [
   ["Claude Code", new URL("../claude-codex/.claude-plugin/plugin.json", import.meta.url)],
   ["Codex", new URL("../claude-codex/.codex-plugin/plugin.json", import.meta.url)],
   ["Pi/OMP", new URL("../pi/package.json", import.meta.url)],
+  ["DeepSeek Harness", new URL("../deepseek/package.json", import.meta.url)],
 ]
 
 const versions = await Promise.all(
@@ -18,6 +19,7 @@ const expected = versions[0][1]
 const lock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"))
 versions.push(["OpenCode lock", lock.packages?.opencode?.version])
 versions.push(["Pi/OMP lock", lock.packages?.pi?.version])
+versions.push(["DeepSeek Harness lock", lock.packages?.deepseek?.version])
 const serverSource = await readFile(new URL("../claude-codex/src/mcp-server.ts", import.meta.url), "utf8")
 const serverVersion = /new McpServer\(\{ name: "pr-monitor", version: "([^"]+)" \}\)/.exec(serverSource)?.[1]
 versions.push(["Claude MCP", serverVersion])

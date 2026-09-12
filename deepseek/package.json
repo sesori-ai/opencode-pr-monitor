@@ -1,0 +1,69 @@
+{
+  "name": "@sesori/pr-monitor-deepseek",
+  "version": "0.5.0",
+  "description": "DeepSeek Harness bundle for GitHub PR monitoring, readiness, and conversation reports",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sesori-ai/pr-monitor-plugin.git"
+  },
+  "homepage": "https://github.com/sesori-ai/pr-monitor-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/sesori-ai/pr-monitor-plugin/issues"
+  },
+  "author": {
+    "name": "Sesori",
+    "url": "https://github.com/sesori-ai"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh-plugin",
+    "github",
+    "pull-request",
+    "monitor"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node ../scripts/build-deepseek.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm --prefix .. run release:check"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-launch-environment": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-skill": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

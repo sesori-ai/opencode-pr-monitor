@@ -14,6 +14,7 @@ const root = new URL("../", import.meta.url)
 const manifests = [
   "opencode/package.json",
   "pi/package.json",
+  "deepseek/package.json",
   "claude-codex/.claude-plugin/plugin.json",
   "claude-codex/.codex-plugin/plugin.json",
 ]
