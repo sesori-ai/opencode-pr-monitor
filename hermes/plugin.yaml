@@ -1,5 +1,5 @@
 name: pr-monitor
-version: 0.4.1
+version: 0.5.0
 description: "Watch GitHub PRs and deliver status to the owning Hermes conversation."
 author: Sesori
 hooks:

@@ -1,6 +1,6 @@
 {
   "name": "pr-monitor",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Manage GitHub PR readiness and report commits, CI, reviews, comments, conflicts, and completion.",
   "author": {
     "name": "Sesori",
