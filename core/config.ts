@@ -18,7 +18,11 @@ export type WatchConfig = {
 export type MonitorConfig = WatchConfig & {
   // Label the mark_ready action applies to a PR on GitHub.
   readyLabel: string
+  // Host-controlled, environment-only opt-in. Never read this from repository config.
+  autoMerge: boolean
 }
+
+export const AUTO_MERGE_ENV = "SESORI_PR_MONITOR_AUTO_MERGE"
 
 export type ClaudeMonitorConfig = MonitorConfig & {
   // Claude Code delivery is passive, so this optionally announces a spooled report out of band.
@@ -37,6 +41,7 @@ const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   announceOnStart: true,
   flushOnCiFailure: true,
   readyLabel: "ready-for-human-review",
+  autoMerge: false,
 }
 
 const DEFAULT_CLAUDE_CONFIG = {
@@ -50,10 +55,13 @@ const MIN_POLL_INTERVAL_SECONDS = 30
 // longer than a useful active-PR interval and remains comfortably below it.
 const MAX_POLL_INTERVAL_SECONDS = 86_400
 
+type MonitorEnvironment = Readonly<Record<string, string | undefined>>
+
 type LoadConfigInput<TConfig> = {
   paths: readonly string[]
   log: (message: string) => void
-  resolve: (raw: unknown) => TConfig
+  environment?: MonitorEnvironment
+  resolve: (raw: unknown, environment: MonitorEnvironment, log: (message: string) => void) => TConfig
 }
 
 function positiveNumber(record: Record<string, unknown>, key: string): number | undefined {
@@ -61,8 +69,22 @@ function positiveNumber(record: Record<string, unknown>, key: string): number | 
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
-function resolveMonitorConfig(raw: unknown): MonitorConfig {
-  const config = { ...DEFAULT_MONITOR_CONFIG }
+function autoMergeEnabled(environment: MonitorEnvironment, log: (message: string) => void): boolean {
+  const raw = environment[AUTO_MERGE_ENV]
+  if (raw === undefined) return false
+  const value = raw.trim().toLowerCase()
+  if (value === "true" || value === "1") return true
+  if (value === "false" || value === "0" || value === "") return false
+  log(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge remains disabled.`)
+  return false
+}
+
+function resolveMonitorConfig(
+  raw: unknown,
+  environment: MonitorEnvironment,
+  log: (message: string) => void,
+): MonitorConfig {
+  const config = { ...DEFAULT_MONITOR_CONFIG, autoMerge: autoMergeEnabled(environment, log) }
   if (typeof raw !== "object" || raw === null) return config
   const record = raw as Record<string, unknown>
 
@@ -82,8 +104,12 @@ function resolveMonitorConfig(raw: unknown): MonitorConfig {
   return config
 }
 
-function resolveClaudeConfig(raw: unknown): ClaudeMonitorConfig {
-  const config: ClaudeMonitorConfig = { ...resolveMonitorConfig(raw), ...DEFAULT_CLAUDE_CONFIG }
+function resolveClaudeConfig(
+  raw: unknown,
+  environment: MonitorEnvironment,
+  log: (message: string) => void,
+): ClaudeMonitorConfig {
+  const config: ClaudeMonitorConfig = { ...resolveMonitorConfig(raw, environment, log), ...DEFAULT_CLAUDE_CONFIG }
   if (typeof raw !== "object" || raw === null) return config
   const record = raw as Record<string, unknown>
 
@@ -95,7 +121,12 @@ function resolveClaudeConfig(raw: unknown): ClaudeMonitorConfig {
   return config
 }
 
-async function loadResolvedConfig<TConfig>({ paths, log, resolve }: LoadConfigInput<TConfig>): Promise<TConfig> {
+async function loadResolvedConfig<TConfig>({
+  paths,
+  log,
+  environment = process.env,
+  resolve,
+}: LoadConfigInput<TConfig>): Promise<TConfig> {
   for (const path of paths) {
     let text: string
     try {
@@ -104,12 +135,12 @@ async function loadResolvedConfig<TConfig>({ paths, log, resolve }: LoadConfigIn
       continue
     }
     try {
-      return resolve(JSON.parse(text))
+      return resolve(JSON.parse(text), environment, log)
     } catch (error) {
       log(`config file ${path} is not valid JSON, ignoring it: ${(error as Error).message}`)
     }
   }
-  return resolve(undefined)
+  return resolve(undefined, environment, log)
 }
 
 export function loadMonitorConfig(input: Omit<LoadConfigInput<MonitorConfig>, "resolve">): Promise<MonitorConfig> {

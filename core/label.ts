@@ -22,10 +22,22 @@ const READY_LABEL_DESCRIPTION = "This PR is ready for human review"
  * number — or a merged/closed PR — would be silently (un)labeled and reported
  * as success.
  */
-async function assertOpenPullRequest(runGh: GhRunner, repo: string, number: number): Promise<void> {
+export type OpenPullRequest = {
+  title: string | undefined
+  headSha: string | undefined
+}
+
+export async function getOpenPullRequest({
+  runGh,
+  target,
+}: {
+  runGh: GhRunner
+  target: Target
+}): Promise<OpenPullRequest> {
+  const repo = `repos/${target.owner}/${target.repo}`
   let raw: string
   try {
-    raw = await runGh(["api", `${repo}/pulls/${number}`])
+    raw = await runGh(["api", `${repo}/pulls/${target.number}`])
   } catch (error) {
     if (error instanceof PollError && error.notFound) {
       // The caller prefixes the target key; do not repeat it here.
@@ -33,15 +45,19 @@ async function assertOpenPullRequest(runGh: GhRunner, repo: string, number: numb
     }
     throw error
   }
-  const pr = JSON.parse(raw) as { state?: string; merged?: boolean }
+  const pr = JSON.parse(raw) as { state?: string; merged?: boolean; title?: unknown; head?: { sha?: unknown } }
   if (pr.merged === true || pr.state !== "open") {
     throw new Error(`the PR is already ${pr.merged === true ? "MERGED" : "CLOSED"}.`)
+  }
+  return {
+    title: typeof pr.title === "string" ? pr.title : undefined,
+    headSha: typeof pr.head?.sha === "string" ? pr.head.sha : undefined,
   }
 }
 
 export async function markReadyForHumanReview(runGh: GhRunner, target: Target, label: string): Promise<string> {
   const repo = `repos/${target.owner}/${target.repo}`
-  await assertOpenPullRequest(runGh, repo, target.number)
+  await getOpenPullRequest({ runGh, target })
   try {
     await runGh([
       "api",
@@ -70,7 +86,7 @@ export async function markReadyForHumanReview(runGh: GhRunner, target: Target, l
  */
 export async function removeReadyForHumanReview(runGh: GhRunner, target: Target, label: string): Promise<string> {
   const repo = `repos/${target.owner}/${target.repo}`
-  await assertOpenPullRequest(runGh, repo, target.number)
+  await getOpenPullRequest({ runGh, target })
   try {
     await runGh(["api", "--method", "DELETE", `${repo}/issues/${target.number}/labels/${encodeURIComponent(label)}`])
   } catch (error) {

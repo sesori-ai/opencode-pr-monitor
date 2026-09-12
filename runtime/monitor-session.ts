@@ -1,10 +1,12 @@
 // Session-scoped application runtime shared by host adapters. It owns watch
-// deduplication, GitHub identity, timers, common actions, and label operations;
+// deduplication, GitHub identity, timers, common actions, and readiness mutations;
 // adapters own transport, lifecycle policy, and truthful host wording.
 
-import type { MonitorConfig } from "../core/config"
+import { AUTO_MERGE_ENV, type MonitorConfig } from "../core/config"
 import { fetchPrSnapshot, type GhRunner, type PrSnapshot } from "../core/github"
 import { markReadyForHumanReview, removeReadyForHumanReview } from "../core/label"
+import { autoMergeFailureText, getAutoMergePullRequest, squashMergePullRequest } from "../core/merge"
+import { hasReadyLabel, withReadyLabel } from "../core/readiness"
 import { parseTarget, targetKey, targetRegistryKey, type Target } from "../core/target"
 import { PrWatch } from "../core/watch"
 import { MonitorAction } from "./tool"
@@ -245,6 +247,34 @@ export class MonitorSession<TConfig extends MonitorConfig> {
     const raced = this.watches.get(key)
     if (raced) return { text: `Already monitoring ${displayKey} in this session.\n${raced.watch.statusLine()}` }
 
+    let startupNotice: string | undefined
+    if (config.autoMerge && hasReadyLabel(initial, config.readyLabel)) {
+      try {
+        await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel)
+      } catch (error) {
+        return {
+          text:
+            `Cannot start monitor for ${displayKey}: auto-merge is enabled but the pre-existing ready label ` +
+            `"${config.readyLabel}" could not be removed (${(error as Error).message}).`,
+        }
+      }
+      initial = withReadyLabel(initial, config.readyLabel, false)
+      startupNotice =
+        `pre-existing ready label "${config.readyLabel}" was removed because ${AUTO_MERGE_ENV}=true. ` +
+        "Reassess the current head and call mark_ready if it is ready; that action will squash-merge it."
+      if (this.lifecycleGeneration !== lifecycleGeneration) {
+        return {
+          text:
+            `Monitor session ended while ${displayKey} was starting. ${startupNotice} ` +
+            "No active monitor remains.",
+        }
+      }
+      const resetRace = this.watches.get(key)
+      if (resetRace) {
+        return { text: `Already monitoring ${displayKey} in this session.\n${resetRace.watch.statusLine()}` }
+      }
+    }
+
     const reportChannel = options.createChannel({ target, config })
     let timer: unknown
     const watch = new PrWatch({
@@ -277,6 +307,16 @@ export class MonitorSession<TConfig extends MonitorConfig> {
               : removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel),
           onChanged: (ready) => this.notifyReadyChanged({ target, ready, watched: true, config }),
         },
+        autoMerge: config.autoMerge
+          ? {
+              squashMerge: ({ pullRequest }) => squashMergePullRequest({
+                runGh: this.deps.runGh,
+                target,
+                pullRequest,
+              }),
+            }
+          : undefined,
+        startupNotice,
       },
     })
     timer = this.deps.schedule({
@@ -308,8 +348,14 @@ export class MonitorSession<TConfig extends MonitorConfig> {
     }
 
     this.deps.log(`started monitoring ${displayKey}`)
+    const autoMergeNotice = config.autoMerge
+      ? ` ${AUTO_MERGE_ENV}=true: automatic readiness and mark_ready make one squash-merge attempt for the ` +
+        "accepted head using only " +
+        "the PR title."
+      : ""
+    const resetNotice = startupNotice === undefined ? "" : ` Startup safety reset: ${startupNotice}`
     return {
-      text: `Started monitoring ${displayKey} — "${initial.title}".`,
+      text: `Started monitoring ${displayKey} — "${initial.title}".${autoMergeNotice}${resetNotice}`,
       start: { target, config, announcement },
     }
   }
@@ -386,9 +432,21 @@ export class MonitorSession<TConfig extends MonitorConfig> {
         }
       }
       const config = await loadConfig()
-      const text = ready
+      const pullRequest = ready && config.autoMerge
+        ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target })
+        : undefined
+      let text = ready
         ? await markReadyForHumanReview(this.deps.runGh, target, config.readyLabel)
         : await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel)
+      if (pullRequest !== undefined) {
+        try {
+          text += `\n${await squashMergePullRequest({ runGh: this.deps.runGh, target, pullRequest })}`
+        } catch (error) {
+          const failure = autoMergeFailureText({ error })
+          this.deps.log(`auto-merge failed for ${displayKey}: ${error}`)
+          text += `\n${failure}`
+        }
+      }
       this.notifyReadyChanged({ target, ready, watched: false, config })
       return { text, ready: { target, ready, watched: false } }
     } catch (error) {

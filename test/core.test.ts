@@ -84,17 +84,25 @@ function watchHarness(
   initial: PrSnapshot,
   polled: PrSnapshot[],
   cfg: WatchConfig = config({ announceOnStart: false }),
-  opts: { deliveryFailures?: number; readiness?: boolean; readinessFailures?: number } = {},
+  opts: {
+    deliveryFailures?: number
+    readiness?: boolean
+    readinessFailures?: number
+    autoMerge?: boolean
+    autoMergeFailures?: number
+  } = {},
 ) {
   let now = Date.parse("2026-08-03T12:00:00Z")
   let index = 0
   let remainingDeliveryFailures = opts.deliveryFailures ?? 0
   let remainingReadinessFailures = opts.readinessFailures ?? 0
+  let remainingAutoMergeFailures = opts.autoMergeFailures ?? 0
   let deliveryAttempts = 0
   const reports: string[] = []
   const persisted: string[] = []
   const readyChanges: boolean[] = []
   const readyObservations: boolean[] = []
+  const autoMerges: Array<{ title: string; headSha: string }> = []
   const watch = new PrWatch({
     target,
     config: cfg,
@@ -130,6 +138,18 @@ function watchHarness(
             onChanged: (ready) => readyObservations.push(ready),
           }
         : undefined,
+      autoMerge: opts.autoMerge
+        ? {
+            squashMerge: async ({ pullRequest }) => {
+              autoMerges.push(pullRequest)
+              if (remainingAutoMergeFailures > 0) {
+                remainingAutoMergeFailures -= 1
+                throw new Error("merge rejected")
+              }
+              return "Auto-merge succeeded: squash merge complete."
+            },
+          }
+        : undefined,
     },
   })
   return {
@@ -138,6 +158,7 @@ function watchHarness(
     persisted,
     readyChanges,
     readyObservations,
+    autoMerges,
     get deliveryAttempts() {
       return deliveryAttempts
     },
@@ -148,9 +169,10 @@ function watchHarness(
 }
 
 test("the default debounce is two minutes", async () => {
-  const loaded = await loadMonitorConfig({ paths: [], log: () => {} })
+  const loaded = await loadMonitorConfig({ paths: [], environment: {}, log: () => {} })
   assert.equal(loaded.debounceMinutes, 2)
   assert.equal(loaded.ignoreCommentTag, "<!-- pr-monitor:reply -->")
+  assert.equal(loaded.autoMerge, false)
 })
 
 test("ready-label matching follows GitHub's case-insensitive label identity", () => {
@@ -583,6 +605,31 @@ test("an ambiguously failed auto-add cannot accept newer feedback when its label
   assert.match(harness.reports.at(-1)!, /ACTION REQUIRED/)
 })
 
+test("a ready label observed after failed auto-add does not authorize auto-merge", async () => {
+  const initial = snapshot({ checks: [{ name: "tests", outcome: "pending" }] })
+  const passed = snapshot({ checks: [{ name: "tests", outcome: "success" }] })
+  const observedReady = snapshot({
+    checks: [{ name: "tests", outcome: "success" }],
+    labels: ["ready-for-human-review"],
+  })
+  const harness = watchHarness(
+    initial,
+    [passed, passed, observedReady],
+    config({ announceOnStart: false }),
+    { readiness: true, readinessFailures: 1, autoMerge: true },
+  )
+
+  await harness.watch.tick()
+  harness.advance(2 * 60_000)
+  await harness.watch.tick()
+  await harness.watch.tick()
+
+  assert.deepEqual(harness.readyChanges, [true])
+  assert.deepEqual(harness.autoMerges, [])
+  assert.match(harness.reports.at(-1)!, /Ready for human review: YES/)
+  assert.doesNotMatch(harness.reports.at(-1)!, /Auto-merge succeeded/)
+})
+
 test("stopping a watch fences queued flush and ready mutations", async () => {
   let resolveFetch!: (snapshot: PrSnapshot) => void
   let announceFetch!: () => void
@@ -731,6 +778,89 @@ test("a new CI-less head withdraws readiness and restores it after quiet", async
   await harness.watch.tick()
   assert.deepEqual(harness.readyChanges, [false, true])
   assert.match(harness.reports[1]!, /Ready for human review: YES/)
+})
+
+test("automatic readiness triggers one title-only auto-merge attempt for the accepted head", async () => {
+  const initial = snapshot({ checks: [{ name: "tests", outcome: "pending" }] })
+  const passed = snapshot({
+    title: "Accepted title",
+    headSha: "accepted-head",
+    checks: [{ name: "tests", outcome: "success" }],
+  })
+  const observedReady = snapshot({
+    ...passed,
+    labels: ["ready-for-human-review"],
+  })
+  const harness = watchHarness(
+    initial,
+    [passed, passed, observedReady],
+    config({ announceOnStart: false }),
+    { readiness: true, autoMerge: true },
+  )
+
+  await harness.watch.tick()
+  harness.advance(2 * 60_000)
+  await harness.watch.tick()
+  await harness.watch.tick()
+
+  assert.deepEqual(harness.readyChanges, [true])
+  assert.deepEqual(harness.autoMerges, [{ title: "Accepted title", headSha: "accepted-head" }])
+  assert.match(harness.reports[0]!, /Auto-merge: ENABLED/)
+  assert.match(harness.reports[0]!, /Auto-merge succeeded/)
+})
+
+test("an externally observed ready label does not trigger auto-merge", async () => {
+  const initial = snapshot()
+  const externallyReady = snapshot({ labels: ["ready-for-human-review"] })
+  const harness = watchHarness(initial, [externallyReady], config({ announceOnStart: false }), {
+    readiness: true,
+    autoMerge: true,
+  })
+
+  await harness.watch.tick()
+
+  assert.deepEqual(harness.readyObservations, [true])
+  assert.deepEqual(harness.autoMerges, [])
+})
+
+test("failed automatic merge keeps readiness and is not retried on later polls", async () => {
+  const initial = snapshot({ checks: [{ name: "tests", outcome: "pending" }] })
+  const passed = snapshot({ checks: [{ name: "tests", outcome: "success" }] })
+  const observedReady = snapshot({
+    checks: [{ name: "tests", outcome: "success" }],
+    labels: ["ready-for-human-review"],
+  })
+  const harness = watchHarness(
+    initial,
+    [passed, passed, observedReady],
+    config({ announceOnStart: false }),
+    { readiness: true, autoMerge: true, autoMergeFailures: 1 },
+  )
+
+  await harness.watch.tick()
+  harness.advance(2 * 60_000)
+  await harness.watch.tick()
+  await harness.watch.tick()
+
+  assert.deepEqual(harness.readyChanges, [true])
+  assert.equal(harness.autoMerges.length, 1)
+  assert.match(harness.reports[0]!, /Auto-merge failed after the ready label was added/)
+  assert.match(harness.reports[0]!, /no automatic retry will occur/)
+  assert.match(harness.reports[0]!, /Ready for human review: YES/)
+})
+
+test("manual readiness triggers auto-merge and returns its result", async () => {
+  const initial = snapshot({ title: "Manual title", headSha: "manual-head", mergeable: "UNKNOWN" })
+  const harness = watchHarness(initial, [initial], config({ announceOnStart: false }), {
+    readiness: true,
+    autoMerge: true,
+  })
+
+  const result = await harness.watch.manualSetReady(true)
+
+  assert.match(result, /ready added/)
+  assert.match(result, /Auto-merge succeeded/)
+  assert.deepEqual(harness.autoMerges, [{ title: "Manual title", headSha: "manual-head" }])
 })
 
 test("external removal plus feedback reports unready before an acknowledged restore", async () => {

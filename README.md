@@ -206,9 +206,11 @@ Behavior notes for the Codex shell:
 - The slash commands are Claude Code only; use the `pr_monitor` tool directly (`status`, `stop`, `mark_ready`, ...).
 - The report spool is shared with Claude Code at `~/.claude/pr-monitor/spool/`. Codex queues are nested under
   `<host pid>/<thread id>`; hooks and waiters select only that conversation. Claude Code retains process routing.
-- Startup observes the existing ready label. The agent must assess the initial report, including after a harness
-  restart, and immediately mark an already-settled PR ready. Empty results after creation or a fresh push do not
-  establish readiness; age alone is insufficient. Automatic readiness continues for later observed activity.
+- Startup normally observes the existing ready label. With environment auto-merge enabled, startup instead removes
+  a pre-existing ready label and requires a fresh `mark_ready` judgment. The agent must assess the initial report,
+  including after a harness restart, and immediately mark an already-settled PR ready. Empty results after creation
+  or a fresh push do not establish readiness; age alone is insufficient. Automatic readiness continues for later
+  observed activity.
 - Across all hosts, clean review summaries, review quota notices and other no-op feedback still require agent
   judgment. After inspecting them and confirming no work remains, the agent calls `mark_ready` explicitly.
 
@@ -257,12 +259,51 @@ All four harnesses register the same tool:
 | `stop`   | PR identifier or `all`                 | Stop watching. |
 | `flush`  | PR identifier or `all`                 | On demand: immediately return a full status report and reset the "new since" baseline. Delivered reports already advance the baseline, so a flush after handling one isn't needed. |
 | `status` | —                                      | List this session's active monitors. |
-| `mark_ready` | `owner/repo#123` or full PR URL    | Unconditionally accept current observed state and add `readyLabel`. Use for non-actionable bot acknowledgements or other judgment calls that should not receive a reply. Creates the label if needed and releases Claude keep-alive. Standalone actions still require an open PR. |
+| `mark_ready` | `owner/repo#123` or full PR URL    | Add `readyLabel`; auto-merge opt-in also squash-merges. |
 | `unmark_ready` | `owner/repo#123` or full PR URL  | Remove the label now. It is idempotent and is not a permanent hold: an active monitor may restore readiness after a later clean assessment. |
+
+## Environment-gated auto-merge
+
+> **Warning:** auto-merge is irreversible. Enable it only in a trusted host environment whose authenticated `gh`
+> account is allowed to merge the repositories it monitors.
+
+Set `SESORI_PR_MONITOR_AUTO_MERGE=true` (or `1`) in the host process environment, then fully restart the desktop
+host. Unset it, set it to `false`, `0`, or an empty value to disable it. Any other value fails closed and logs a
+configuration warning. This switch is deliberately environment-only: an `autoMerge` key in repository
+`.pr-monitor.json` is ignored, so checked-out code cannot opt the host into merging.
+
+```sh
+# Shell-launched hosts
+export SESORI_PR_MONITOR_AUTO_MERGE=true
+
+# macOS GUI hosts for the current login session; restart the app afterward
+launchctl setenv SESORI_PR_MONITOR_AUTO_MERGE true
+```
+
+When enabled:
+
+- A successfully completed readiness transition performed by the monitor, or any successful `mark_ready` action
+  (watched or standalone), first keeps/applies `readyLabel`, then makes one squash-merge attempt. Merely observing a
+  label added externally—or after a failed/ambiguous label mutation—does not merge.
+- Starting a monitor on an open PR that already carries `readyLabel` removes that label before the watch starts.
+  The start result and, when `announceOnStart` is enabled, initial report say it was cleared and require the agent
+  to reassess the current head and call `mark_ready` again if appropriate. Startup never merges from stale handoff
+  state.
+- The merge request is fenced to the accepted head SHA. The squash commit title is the current PR title and its
+  commit-message body is explicitly empty.
+- A successful merge dynamically creates and applies the blue `automatically-merged` label. Failure to apply this
+  marker cannot undo a completed merge and is reported as a warning.
+- A rejected merge leaves `readyLabel` in place, reports the failure, and is not retried automatically while that
+  readiness state remains unchanged. A later new readiness transition, or an explicit later `mark_ready`, is a new
+  attempt.
 
 ## Configuration
 
-Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls back to `.claude/pr-monitor.json` then `.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`; Pi/OMP use their `CONFIG_DIR_NAME` (`.pi`/`.omp`) before `.opencode/pr-monitor.json`. Pi reads project-local config only after project trust.
+Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls back to
+`.claude/pr-monitor.json` then `.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`;
+Hermes falls back to `.hermes/pr-monitor.json` then `.opencode/pr-monitor.json`; Pi/OMP use their
+`CONFIG_DIR_NAME` (`.pi`/`.omp`) before `.opencode/pr-monitor.json`. Pi reads project-local config only after project
+trust. Auto-merge is not a JSON setting; use the host environment switch above.
 
 ```json
 {

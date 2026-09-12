@@ -7576,15 +7576,15 @@ var makeIssue = (params) => {
       message: issueData.message
     };
   }
-  let errorMessage = "";
+  let errorMessage2 = "";
   const maps = errorMaps.filter((m) => !!m).slice().reverse();
   for (const map2 of maps) {
-    errorMessage = map2(fullIssue, { data, defaultError: errorMessage }).message;
+    errorMessage2 = map2(fullIssue, { data, defaultError: errorMessage2 }).message;
   }
   return {
     ...issueData,
     path: fullPath,
-    message: errorMessage
+    message: errorMessage2
   };
 };
 function addIssueToContext(ctx, issueData) {
@@ -27376,19 +27376,19 @@ var getRefs = (options) => {
 };
 
 // node_modules/zod-to-json-schema/dist/esm/errorMessages.js
-function addErrorMessage(res, key, errorMessage, refs) {
+function addErrorMessage(res, key, errorMessage2, refs) {
   if (!refs?.errorMessages)
     return;
-  if (errorMessage) {
+  if (errorMessage2) {
     res.errorMessage = {
       ...res.errorMessage,
-      [key]: errorMessage
+      [key]: errorMessage2
     };
   }
 }
-function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
+function setResponseValueAndErrors(res, key, value, errorMessage2, refs) {
   res[key] = value;
-  addErrorMessage(res, key, errorMessage, refs);
+  addErrorMessage(res, key, errorMessage2, refs);
 }
 
 // node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
@@ -28699,8 +28699,8 @@ var Protocol = class {
                   if (queuedMessage.type === "response") {
                     resolver(message);
                   } else {
-                    const errorMessage = message;
-                    const error51 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                    const errorMessage2 = message;
+                    const error51 = new McpError(errorMessage2.error.code, errorMessage2.error.message, errorMessage2.error.data);
                     resolver(error51);
                   }
                 } else {
@@ -30000,23 +30000,23 @@ var Server = class extends Protocol {
       const wrappedHandler = async (request, extra) => {
         const validatedRequest = safeParse2(CallToolRequestSchema, request);
         if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+          const errorMessage2 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage2}`);
         }
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+            const errorMessage2 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage2}`);
           }
           return taskValidationResult.data;
         }
         const validationResult = safeParse2(CallToolResultSchema, result);
         if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+          const errorMessage2 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage2}`);
         }
         return validationResult.data;
       };
@@ -30510,12 +30510,12 @@ var McpServer = class {
    * @param errorMessage - The error message.
    * @returns The tool error result.
    */
-  createToolError(errorMessage) {
+  createToolError(errorMessage2) {
     return {
       content: [
         {
           type: "text",
-          text: errorMessage
+          text: errorMessage2
         }
       ],
       isError: true
@@ -30533,8 +30533,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(schemaToParse, args);
     if (!parseResult.success) {
       const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error51);
-      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage}`);
+      const errorMessage2 = getParseErrorMessage(error51);
+      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage2}`);
     }
     return parseResult.data;
   }
@@ -30558,8 +30558,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(outputObj, result.structuredContent);
     if (!parseResult.success) {
       const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error51);
-      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage}`);
+      const errorMessage2 = getParseErrorMessage(error51);
+      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage2}`);
     }
   }
   /**
@@ -30771,8 +30771,8 @@ var McpServer = class {
         const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
         if (!parseResult.success) {
           const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-          const errorMessage = getParseErrorMessage(error51);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage}`);
+          const errorMessage2 = getParseErrorMessage(error51);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage2}`);
         }
         const args = parseResult.data;
         const cb = prompt.callback;
@@ -31269,6 +31269,7 @@ var StdioServerTransport = class {
 
 // core/config.ts
 import { readFile } from "node:fs/promises";
+var AUTO_MERGE_ENV = "SESORI_PR_MONITOR_AUTO_MERGE";
 var DEFAULT_MONITOR_CONFIG = {
   debounceMinutes: 2,
   maxCiWaitMinutes: 30,
@@ -31276,7 +31277,8 @@ var DEFAULT_MONITOR_CONFIG = {
   ignoreCommentTag: "<!-- pr-monitor:reply -->",
   announceOnStart: true,
   flushOnCiFailure: true,
-  readyLabel: "ready-for-human-review"
+  readyLabel: "ready-for-human-review",
+  autoMerge: false
 };
 var DEFAULT_CLAUDE_CONFIG = {
   desktopNotifications: false,
@@ -31289,8 +31291,17 @@ function positiveNumber(record2, key) {
   const value = record2[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
 }
-function resolveMonitorConfig(raw) {
-  const config2 = { ...DEFAULT_MONITOR_CONFIG };
+function autoMergeEnabled(environment, log2) {
+  const raw = environment[AUTO_MERGE_ENV];
+  if (raw === void 0) return false;
+  const value = raw.trim().toLowerCase();
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0" || value === "") return false;
+  log2(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge remains disabled.`);
+  return false;
+}
+function resolveMonitorConfig(raw, environment, log2) {
+  const config2 = { ...DEFAULT_MONITOR_CONFIG, autoMerge: autoMergeEnabled(environment, log2) };
   if (typeof raw !== "object" || raw === null) return config2;
   const record2 = raw;
   config2.debounceMinutes = positiveNumber(record2, "debounceMinutes") ?? config2.debounceMinutes;
@@ -31307,8 +31318,8 @@ function resolveMonitorConfig(raw) {
   if (typeof label === "string" && label.length > 0) config2.readyLabel = label;
   return config2;
 }
-function resolveClaudeConfig(raw) {
-  const config2 = { ...resolveMonitorConfig(raw), ...DEFAULT_CLAUDE_CONFIG };
+function resolveClaudeConfig(raw, environment, log2) {
+  const config2 = { ...resolveMonitorConfig(raw, environment, log2), ...DEFAULT_CLAUDE_CONFIG };
   if (typeof raw !== "object" || raw === null) return config2;
   const record2 = raw;
   const notify = record2["desktopNotifications"];
@@ -31318,7 +31329,12 @@ function resolveClaudeConfig(raw) {
   config2.keepAliveMaxMinutes = positiveNumber(record2, "keepAliveMaxMinutes") ?? config2.keepAliveMaxMinutes;
   return config2;
 }
-async function loadResolvedConfig({ paths, log: log2, resolve }) {
+async function loadResolvedConfig({
+  paths,
+  log: log2,
+  environment = process.env,
+  resolve
+}) {
   for (const path of paths) {
     let text;
     try {
@@ -31327,12 +31343,12 @@ async function loadResolvedConfig({ paths, log: log2, resolve }) {
       continue;
     }
     try {
-      return resolve(JSON.parse(text));
+      return resolve(JSON.parse(text), environment, log2);
     } catch (error51) {
       log2(`config file ${path} is not valid JSON, ignoring it: ${error51.message}`);
     }
   }
-  return resolve(void 0);
+  return resolve(void 0, environment, log2);
 }
 function loadClaudeConfig(input) {
   return loadResolvedConfig({ ...input, resolve: resolveClaudeConfig });
@@ -31681,10 +31697,14 @@ function ciPhase(snapshot) {
 // core/label.ts
 var READY_LABEL_COLOR = "0e8a16";
 var READY_LABEL_DESCRIPTION = "This PR is ready for human review";
-async function assertOpenPullRequest(runGh2, repo, number4) {
+async function getOpenPullRequest({
+  runGh: runGh2,
+  target
+}) {
+  const repo = `repos/${target.owner}/${target.repo}`;
   let raw;
   try {
-    raw = await runGh2(["api", `${repo}/pulls/${number4}`]);
+    raw = await runGh2(["api", `${repo}/pulls/${target.number}`]);
   } catch (error51) {
     if (error51 instanceof PollError && error51.notFound) {
       throw new Error(`it is not a pull request, or it does not exist or is not accessible.`);
@@ -31695,10 +31715,14 @@ async function assertOpenPullRequest(runGh2, repo, number4) {
   if (pr.merged === true || pr.state !== "open") {
     throw new Error(`the PR is already ${pr.merged === true ? "MERGED" : "CLOSED"}.`);
   }
+  return {
+    title: typeof pr.title === "string" ? pr.title : void 0,
+    headSha: typeof pr.head?.sha === "string" ? pr.head.sha : void 0
+  };
 }
 async function markReadyForHumanReview(runGh2, target, label) {
   const repo = `repos/${target.owner}/${target.repo}`;
-  await assertOpenPullRequest(runGh2, repo, target.number);
+  await getOpenPullRequest({ runGh: runGh2, target });
   try {
     await runGh2([
       "api",
@@ -31717,7 +31741,7 @@ async function markReadyForHumanReview(runGh2, target, label) {
 }
 async function removeReadyForHumanReview(runGh2, target, label) {
   const repo = `repos/${target.owner}/${target.repo}`;
-  await assertOpenPullRequest(runGh2, repo, target.number);
+  await getOpenPullRequest({ runGh: runGh2, target });
   try {
     await runGh2(["api", "--method", "DELETE", `${repo}/issues/${target.number}/labels/${encodeURIComponent(label)}`]);
   } catch (error51) {
@@ -31727,6 +31751,85 @@ async function removeReadyForHumanReview(runGh2, target, label) {
     throw error51;
   }
   return `Removed the "${label}" label from ${targetKey(target)}: it is no longer flagged for human review.`;
+}
+
+// core/merge.ts
+var AUTO_MERGED_LABEL = "automatically-merged";
+var AUTO_MERGED_LABEL_COLOR = "1d76db";
+var AUTO_MERGED_LABEL_DESCRIPTION = "Merged automatically by Sesori PR Monitor";
+function errorMessage(error51) {
+  return error51 instanceof Error ? error51.message : String(error51);
+}
+function autoMergeFailureText({ error: error51 }) {
+  return "Auto-merge failed after the ready label was added; the ready label remains and no automatic retry will occur: " + errorMessage(error51);
+}
+async function getAutoMergePullRequest({
+  runGh: runGh2,
+  target
+}) {
+  const pullRequest = await getOpenPullRequest({ runGh: runGh2, target });
+  if (pullRequest.title === void 0 || pullRequest.title.length === 0 || pullRequest.headSha === void 0 || pullRequest.headSha.length === 0) {
+    throw new Error("GitHub's pull-request response did not include the title and head SHA required for auto-merge.");
+  }
+  return { title: pullRequest.title, headSha: pullRequest.headSha };
+}
+async function addAutoMergedLabel({ runGh: runGh2, target }) {
+  const repo = `repos/${target.owner}/${target.repo}`;
+  try {
+    await runGh2([
+      "api",
+      `${repo}/labels`,
+      "-f",
+      `name=${AUTO_MERGED_LABEL}`,
+      "-f",
+      `color=${AUTO_MERGED_LABEL_COLOR}`,
+      "-f",
+      `description=${AUTO_MERGED_LABEL_DESCRIPTION}`
+    ]);
+  } catch {
+  }
+  await runGh2(["api", `${repo}/issues/${target.number}/labels`, "-f", `labels[]=${AUTO_MERGED_LABEL}`]);
+}
+async function squashMergePullRequest({
+  runGh: runGh2,
+  target,
+  pullRequest
+}) {
+  if (pullRequest.title.length === 0 || pullRequest.headSha.length === 0) {
+    throw new Error("Auto-merge requires a non-empty PR title and head SHA.");
+  }
+  const repo = `repos/${target.owner}/${target.repo}`;
+  const raw = await runGh2([
+    "api",
+    "--method",
+    "PUT",
+    `${repo}/pulls/${target.number}/merge`,
+    "-f",
+    "merge_method=squash",
+    "-f",
+    `sha=${pullRequest.headSha}`,
+    "-f",
+    `commit_title=${pullRequest.title}`,
+    "-f",
+    "commit_message="
+  ]);
+  let result;
+  try {
+    result = JSON.parse(raw);
+  } catch {
+    throw new Error("GitHub returned an invalid response to the squash-merge request.");
+  }
+  if (result.merged !== true) {
+    const detail = typeof result.message === "string" && result.message.length > 0 ? result.message : "GitHub did not confirm the merge.";
+    throw new Error(detail);
+  }
+  const merged = `Auto-merge succeeded: squash-merged ${targetKey(target)} at ${pullRequest.headSha} using only the PR title.`;
+  try {
+    await addAutoMergedLabel({ runGh: runGh2, target });
+    return `${merged} Label "${AUTO_MERGED_LABEL}" added.`;
+  } catch (error51) {
+    return `${merged} Warning: could not add label "${AUTO_MERGED_LABEL}": ${errorMessage(error51)}`;
+  }
 }
 
 // core/activity.ts
@@ -31993,13 +32096,21 @@ function buildReadinessLines({
   snapshot,
   readyLabel,
   replyPrefix,
-  readinessError
+  readinessError,
+  autoMergeEnabled: autoMergeEnabled2 = false,
+  autoMergeNotice
 }) {
   const ready = hasReadyLabel(snapshot, readyLabel);
   const lines = [
     ready ? `- Ready for human review: YES \u2014 label "${readyLabel}" is present.` : `- Ready for human review: NO \u2014 label "${readyLabel}" is absent.`
   ];
+  if (autoMergeEnabled2) {
+    lines.push(
+      "- Auto-merge: ENABLED \u2014 automatic readiness and mark_ready make one squash-merge attempt for the accepted head; the squash commit uses only the PR title."
+    );
+  }
   if (readinessError !== void 0) lines.push(`- Readiness automation failed: ${readinessError}`);
+  if (autoMergeNotice !== void 0) lines.push(`- ${autoMergeNotice}`);
   if (!ready && snapshot.state === "OPEN") {
     const assessment = assessAutomaticReadiness(snapshot);
     if (assessment.blockers.length > 0) {
@@ -32031,7 +32142,9 @@ function buildReport(target, snapshot, opts) {
       snapshot,
       readyLabel,
       replyPrefix,
-      readinessError: opts.readinessError
+      readinessError: opts.readinessError,
+      autoMergeEnabled: opts.autoMergeEnabled,
+      autoMergeNotice: opts.autoMergeNotice
     })
   ];
   if (snapshot.labels.length > 0) lines.push(`- Labels: ${snapshot.labels.join(", ")}`);
@@ -32073,13 +32186,18 @@ var PrWatch = class {
   snapshotAt;
   stopped = false;
   stopCleanup;
-  // Only GitHub label mutation must drain before a successor can own this PR.
-  // Fetches and deliveries are fenced by `stopped` but must not block teardown.
+  // An already-started GitHub readiness mutation must drain before a successor
+  // can own this PR. This includes an auto-merge already in flight; stopping
+  // after label completion fences a follow-on merge that has not started yet.
+  // Fetches and deliveries are fenced by `stopped` but do not block teardown.
   readinessMutation;
   readinessRetry;
   readinessRetryBaseline;
   readinessError;
   reportedReadinessError;
+  // One-shot result from an automatic readiness-triggered merge attempt. It is
+  // retained across delivery failure, then cleared after successful delivery.
+  autoMergeNotice;
   // A poll may observe new feedback and a prefixed response together. The
   // ready label is still withdrawn and reported first; only a later quiet
   // report can restore it, so the feedback never disappears behind one poll.
@@ -32111,7 +32229,8 @@ var PrWatch = class {
     const failures = this.consecutiveFailures > 0 ? `, ${this.consecutiveFailures} consecutive poll failures` : "";
     const readiness = this.deps.readiness;
     const ready = readiness !== void 0 && this.snapshot !== void 0 ? `, ready for human review: ${hasReadyLabel(this.snapshot, readiness.label) ? "yes" : "no"}` : "";
-    return `${targetKey(this.target)} \u2014 ${phase}, ${this.dirty ? "activity buffered" : "quiet"}, baseline ${baselineAge}m ago${failures}${ready}`;
+    const autoMerge = this.deps.autoMerge === void 0 ? "" : ", auto-merge: squash";
+    return `${targetKey(this.target)} \u2014 ${phase}, ${this.dirty ? "activity buffered" : "quiet"}, baseline ${baselineAge}m ago${failures}${ready}${autoMerge}`;
   }
   runExclusive(task) {
     this.pendingOps += 1;
@@ -32156,13 +32275,17 @@ var PrWatch = class {
         throw new Error("this watch does not have a readiness channel");
       }
       return await this.trackReadinessMutation(async () => {
-        const text = await readiness.change(ready);
+        let text = await readiness.change(ready);
         this.snapshot = withReadyLabel(snapshot, readiness.label, ready);
         if (!this.stopped) {
           this.clearReadinessFailure();
           this.autoReadyAfterInvalidation = false;
           this.notifyReadyChanged(ready);
-          if (!ready && assessAutomaticReadiness(this.snapshot).eligible) {
+          if (ready) {
+            const autoMerge = await this.attemptAutoMerge({ snapshot: this.snapshot, report: false });
+            if (autoMerge !== void 0) text += `
+${autoMerge}`;
+          } else if (assessAutomaticReadiness(this.snapshot).eligible) {
             this.dirty = true;
             this.lastActivityAt = this.deps.now();
             this.holdStartedAt = void 0;
@@ -32397,7 +32520,9 @@ var PrWatch = class {
         snapshot,
         readyLabel: readiness.label,
         replyPrefix: readiness.replyPrefix,
-        readinessError: this.readinessError
+        readinessError: this.readinessError,
+        autoMergeEnabled: this.deps.autoMerge !== void 0,
+        autoMergeNotice: this.autoMergeNotice
       })
     ].join("\n");
   }
@@ -32503,6 +32628,7 @@ var PrWatch = class {
         if (this.stopped) return changed;
         this.clearReadinessFailure();
         this.notifyReadyChanged(ready);
+        if (ready) await this.attemptAutoMerge({ snapshot: changed, report: true });
         return changed;
       } catch (error51) {
         this.snapshot = snapshot;
@@ -32522,6 +32648,24 @@ var PrWatch = class {
       }
     });
   }
+  async attemptAutoMerge({
+    snapshot,
+    report
+  }) {
+    const autoMerge = this.deps.autoMerge;
+    if (autoMerge === void 0) return void 0;
+    let notice;
+    try {
+      notice = await autoMerge.squashMerge({
+        pullRequest: { title: snapshot.title, headSha: snapshot.headSha }
+      });
+    } catch (error51) {
+      notice = autoMergeFailureText({ error: error51 });
+      this.deps.log(`auto-merge failed for ${targetKey(this.target)}: ${error51}`);
+    }
+    if (report) this.autoMergeNotice = notice;
+    return notice;
+  }
   clearReadinessFailure() {
     this.readinessRetry = void 0;
     this.readinessRetryBaseline = void 0;
@@ -32537,6 +32681,7 @@ var PrWatch = class {
   }
   afterReportDelivered() {
     this.reportedReadinessError = this.readinessError;
+    this.autoMergeNotice = void 0;
     if (!this.autoReadyAfterInvalidation) return;
     this.autoReadyAfterInvalidation = false;
     const snapshot = this.snapshot;
@@ -32583,10 +32728,14 @@ var PrWatch = class {
       forcedHoldMinutes,
       readyLabel: readiness?.label,
       replyPrefix: readiness?.replyPrefix,
-      readinessError: this.readinessError
+      readinessError: this.readinessError,
+      autoMergeEnabled: this.deps.autoMerge !== void 0,
+      autoMergeNotice: this.autoMergeNotice
     });
     if (!this.initialAnnouncementPending || this.snapshot?.state !== "OPEN") return report;
-    return report + "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, and existing feedback now. If already settled with nothing left to do, call mark_ready without waiting for a new event. Empty results after creation or a fresh push do not prove readiness; PR age alone is insufficient.";
+    const startupNotice = this.deps.startupNotice === void 0 ? "" : `
+- Startup safety reset: ${this.deps.startupNotice}`;
+    return report + startupNotice + "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, and existing feedback now. If already settled with nothing left to do, call mark_ready without waiting for a new event. Empty results after creation or a fresh push do not prove readiness; PR age alone is insufficient.";
   }
   flush(forcedHoldMinutes) {
     const snapshot = this.snapshot;
@@ -32623,7 +32772,7 @@ function buildMonitorToolDescription({
   lifecycle,
   waiting
 }) {
-  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports observe the existing label; assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Tuning lives in ${configPath}. ${lifecycle}`;
+  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With SESORI_PR_MONITOR_AUTO_MERGE=true, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Tuning lives in ${configPath}. ${lifecycle}`;
 }
 
 // runtime/monitor-session.ts
@@ -32754,6 +32903,28 @@ ${existing.watch.statusLine()}` };
     const raced = this.watches.get(key);
     if (raced) return { text: `Already monitoring ${displayKey} in this session.
 ${raced.watch.statusLine()}` };
+    let startupNotice;
+    if (config2.autoMerge && hasReadyLabel(initial, config2.readyLabel)) {
+      try {
+        await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
+      } catch (error51) {
+        return {
+          text: `Cannot start monitor for ${displayKey}: auto-merge is enabled but the pre-existing ready label "${config2.readyLabel}" could not be removed (${error51.message}).`
+        };
+      }
+      initial = withReadyLabel(initial, config2.readyLabel, false);
+      startupNotice = `pre-existing ready label "${config2.readyLabel}" was removed because ${AUTO_MERGE_ENV}=true. Reassess the current head and call mark_ready if it is ready; that action will squash-merge it.`;
+      if (this.lifecycleGeneration !== lifecycleGeneration) {
+        return {
+          text: `Monitor session ended while ${displayKey} was starting. ${startupNotice} No active monitor remains.`
+        };
+      }
+      const resetRace = this.watches.get(key);
+      if (resetRace) {
+        return { text: `Already monitoring ${displayKey} in this session.
+${resetRace.watch.statusLine()}` };
+      }
+    }
     const reportChannel = options.createChannel({ target, config: config2 });
     let timer;
     const watch = new PrWatch({
@@ -32779,7 +32950,15 @@ ${raced.watch.statusLine()}` };
           replyPrefix: config2.ignoreCommentTag ?? "<!-- pr-monitor:reply -->",
           change: (ready) => ready ? markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel),
           onChanged: (ready) => this.notifyReadyChanged({ target, ready, watched: true, config: config2 })
-        }
+        },
+        autoMerge: config2.autoMerge ? {
+          squashMerge: ({ pullRequest }) => squashMergePullRequest({
+            runGh: this.deps.runGh,
+            target,
+            pullRequest
+          })
+        } : void 0,
+        startupNotice
       }
     });
     timer = this.deps.schedule({
@@ -32807,8 +32986,10 @@ ${raced.watch.statusLine()}` };
       void watch.initializeReadiness();
     }
     this.deps.log(`started monitoring ${displayKey}`);
+    const autoMergeNotice = config2.autoMerge ? ` ${AUTO_MERGE_ENV}=true: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title.` : "";
+    const resetNotice = startupNotice === void 0 ? "" : ` Startup safety reset: ${startupNotice}`;
     return {
-      text: `Started monitoring ${displayKey} \u2014 "${initial.title}".`,
+      text: `Started monitoring ${displayKey} \u2014 "${initial.title}".${autoMergeNotice}${resetNotice}`,
       start: { target, config: config2, announcement }
     };
   }
@@ -32872,7 +33053,19 @@ ${raced.watch.statusLine()}` };
         };
       }
       const config2 = await loadConfig();
-      const text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
+      const pullRequest = ready && config2.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
+      let text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
+      if (pullRequest !== void 0) {
+        try {
+          text += `
+${await squashMergePullRequest({ runGh: this.deps.runGh, target, pullRequest })}`;
+        } catch (error51) {
+          const failure = autoMergeFailureText({ error: error51 });
+          this.deps.log(`auto-merge failed for ${displayKey}: ${error51}`);
+          text += `
+${failure}`;
+        }
+      }
       this.notifyReadyChanged({ target, ready, watched: false, config: config2 });
       return { text, ready: { target, ready, watched: false } };
     } catch (error51) {

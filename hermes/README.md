@@ -36,6 +36,12 @@ Resume after a host restart and explicitly restart missing watches. No detached 
 Configuration is captured from the conversation's working directory: `.pr-monitor.json`, then
 `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 
+Set `SESORI_PR_MONITOR_AUTO_MERGE=true` in the Hermes backend process environment to make automatic readiness and
+`mark_ready` perform one head-fenced, title-only squash merge. This irreversible switch is environment-only;
+repository config cannot enable it. With it enabled, monitor startup removes any pre-existing ready label and
+requires fresh assessment. Successful merges get a dynamically created `automatically-merged` label. See the root
+README for failure behavior and setup details.
+
 ## Compatibility boundary
 
 Hermes's public Python `inject_message` API does not currently cover Desktop/TUI. `desktop.py` is a narrow

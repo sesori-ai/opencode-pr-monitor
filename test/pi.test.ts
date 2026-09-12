@@ -97,6 +97,7 @@ function monitorConfig(overrides: Partial<MonitorConfig> = {}): MonitorConfig {
     announceOnStart: true,
     flushOnCiFailure: true,
     readyLabel: "ready-for-human-review",
+    autoMerge: false,
     ...overrides,
   }
 }

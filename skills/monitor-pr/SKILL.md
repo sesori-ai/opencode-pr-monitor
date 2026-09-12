@@ -1,8 +1,9 @@
 ---
 name: monitor-pr
 description: >-
-  Drive a GitHub PR to ready-for-human-review without supervision. Start
-  pr_monitor immediately after opening a PR and act on every automatic report;
+  Drive a GitHub PR to ready-for-human-review or environment-gated auto-merge
+  without supervision. Start pr_monitor immediately after opening a PR and act
+  on every automatic report;
   the monitor owns polling and readiness labels, so never create sleeps,
   scheduled checks, or polling loops. Address new feedback on every changed
   thread, failing CI, and conflicts. Use after raising a PR, when asked to watch
@@ -11,7 +12,7 @@ description: >-
 
 # monitor-pr
 
-Own a PR from creation through handoff. The monitor polls GitHub, delivers
+Own a PR from creation through handoff or environment-gated auto-merge. The monitor polls GitHub, delivers
 reports, and automatically adds or withdraws the configured ready label. The
 agent owns the substantive judgment: inspect every new comment, fix what is
 valid, and use `mark_ready` when new activity is non-actionable and deliberately
@@ -35,11 +36,15 @@ pr_monitor(action: "start", pr: "owner/repo#123")
 
 ## Assess the initial report, including after a restart
 
-Startup observes the existing label without automatically adding it. Treat
-the initial PR state as an actionable report. Restarting the harness
-kills its monitors; when you start one again, assess readiness immediately.
-Do not wait for a new commit, comment, or CI transition to make an already
-settled PR eligible for handoff.
+Startup normally observes the existing label without automatically adding it.
+When the report says environment auto-merge is enabled, startup instead removes
+a pre-existing ready label as a safety reset. The start result and, when startup
+announcements are enabled, initial report identify that reset. Treat the initial
+PR state as actionable, reassess the current head, and call `mark_ready` again
+only if it is ready; that fresh mark makes one squash-merge attempt. Restarting
+the harness kills its monitors, so assess readiness immediately after starting
+another one. Do not wait for a new commit, comment, or CI transition to make an
+already settled PR eligible for handoff.
 
 Inspect the current head's checks, expected automated review activity, and the
 full existing feedback. Use the PR creation and latest-push history as context:
@@ -75,6 +80,9 @@ Address everything in one batch:
   them. Reports intentionally contain authors/counts, not comment bodies.
 - **A local-account, unprefixed comment:** treat it as a human instruction even
   though the agent uses the same GitHub account.
+- **Auto-merge failure:** the ready label remains and the monitor does not retry
+  the unchanged readiness state. Inspect the reason, address any blocker, then
+  use `mark_ready` only when an explicit new merge attempt is warranted.
 - **Merged/closed:** monitoring stopped; no further action.
 
 When taking action, reply on GitHub with the configured prefix first. It is the
@@ -127,6 +135,9 @@ When CI is green, the PR is mergeable, and no actionable work remains, use
 `mark_ready` is an unconditional judgment override. It accepts all activity
 currently observed by the watch and adds the label. Only later invalidating
 activity withdraws it again. Claim handoff only after the tool confirms success.
+When reports say auto-merge is enabled, `mark_ready` also makes one irreversible,
+head-fenced squash-merge attempt whose commit uses only the PR title. Never run
+a duplicate merge command after an `Auto-merge succeeded` result.
 
 `unmark_ready` removes the label now, but it is not a permanent hold; automatic
 readiness may restore it after a later clean assessment.

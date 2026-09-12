@@ -12,7 +12,9 @@ Highest level: L5. Result vocabulary and proof boundaries follow [README.md](REA
 | L3 | Actual host loader | Installed Hermes discovers the copied Git plugin, tool, namespaced skill and prompt section; unload removes registrations. | Pass: 2026-09-07, Hermes 9a84bee265da, macOS / Python 3.11.16 |
 | L3 | Model-driven Desktop gateway | A real model starts a monitor, ends its turn, and wakes for a later simulated merge report. | Pass: 2026-09-07, Hermes 9a84bee265da, macOS / Python 3.11.16 / Node 26.8.1 |
 | L2 | Unsupported hosts / labels | Native CLI/gateway/ACP injection availability cannot enable background monitoring; standalone ready actions need no delivery route and close their temporary worker. | `test/hermes_adapter_test.py` |
+| L2 | Auto-merge | Env-only, head-fenced, title-only squash; reset stale readiness. | Unit tests + built worker |
 | L3 | Actual host / external | Merge a disposable PR after readiness handoff; the original idle Desktop conversation gets one terminal report and monitoring stops. | Not run |
+| L4 | External auto-merge | Hermes env merges a disposable PR with title-only commit and marker. | Not run |
 | L4 | Actual host | Switching tabs/profiles, compression, finalize/reset, plugin unload, host restart, transport reconnect and two concurrent conversations preserve ownership and stop fences. | Not run |
 | L4 | Actual host | Test Desktop process-isolation settings. A worker without the live gateway must reject start rather than claim delivery. | Not run |
 | L5 | Packaged / external | Install the Hermes subdirectory from the release tag with no repository dependencies/build; exercise all supported hosts on macOS/Linux and version-update compatibility. | Not run |

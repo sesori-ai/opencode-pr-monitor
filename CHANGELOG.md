@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acknowledged report failures, lifecycle cleanup, and packaged adapter tests. Standalone label actions work on
   all Hermes hosts. Desktop uses a guarded compatibility adapter; CLI, messaging gateways, ACP and isolated
   Desktop turns reject background monitoring because their native APIs cannot bind reports to the original conversation.
+- Environment-only `SESORI_PR_MONITOR_AUTO_MERGE=true` support across all hosts. Automatic readiness and
+  `mark_ready` retain the ready label, then make one head-fenced squash merge whose commit uses only the PR title.
+  Successful merges receive a dynamically created `automatically-merged` label; merge rejection keeps readiness and
+  is not retried automatically. With this mode enabled, startup clears a pre-existing ready label and requires fresh
+  agent assessment before any merge attempt.
 
 ### Changed
 

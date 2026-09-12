@@ -5,6 +5,7 @@ import { join } from "node:path"
 import test from "node:test"
 
 import {
+  AUTO_MERGE_ENV,
   loadClaudeConfig,
   loadMonitorConfig,
   type MonitorConfig,
@@ -28,6 +29,7 @@ function config(overrides: Partial<MonitorConfig> = {}): MonitorConfig {
     announceOnStart: false,
     flushOnCiFailure: true,
     readyLabel: "ready-for-human-review",
+    autoMerge: false,
     ...overrides,
   }
 }
@@ -36,10 +38,12 @@ function payload({
   number = 42,
   state = "OPEN",
   mergeable = "MERGEABLE",
+  labels = [],
 }: {
   number?: number
   state?: PrSnapshot["state"]
   mergeable?: PrSnapshot["mergeable"]
+  labels?: string[]
 } = {}): string {
   return JSON.stringify({
     data: {
@@ -55,7 +59,7 @@ function payload({
           latestReviews: { nodes: [] },
           reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
           comments: { totalCount: 0, nodes: [] },
-          labels: { nodes: [] },
+          labels: { nodes: labels.map((name) => ({ name })) },
         },
       },
     },
@@ -157,17 +161,47 @@ test("common and Claude config resolve separate settings", async () => {
       desktopNotifications: true,
       keepAlive: false,
       keepAliveMaxMinutes: 9,
+      autoMerge: true,
     }),
   )
   try {
-    const common = await loadMonitorConfig({ paths: [path], log: () => {} })
-    const claude = await loadClaudeConfig({ paths: [path], log: () => {} })
+    const common = await loadMonitorConfig({ paths: [path], environment: {}, log: () => {} })
+    const claude = await loadClaudeConfig({ paths: [path], environment: {}, log: () => {} })
     assert.equal(common.debounceMinutes, 5)
     assert.equal(common.readyLabel, "ready")
+    assert.equal(common.autoMerge, false)
     assert.equal("desktopNotifications" in common, false)
     assert.equal(claude.desktopNotifications, true)
     assert.equal(claude.keepAlive, false)
     assert.equal(claude.keepAliveMaxMinutes, 9)
+    assert.equal(claude.autoMerge, false)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("auto-merge is enabled only by an explicit host environment flag", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pr-monitor-auto-merge-config-"))
+  const path = join(directory, "pr-monitor.json")
+  await writeFile(path, JSON.stringify({ autoMerge: true }))
+  const logs: string[] = []
+  try {
+    const repositoryOnly = await loadMonitorConfig({ paths: [path], environment: {}, log: () => {} })
+    const enabled = await loadMonitorConfig({
+      paths: [path],
+      environment: { [AUTO_MERGE_ENV]: "TrUe" },
+      log: () => {},
+    })
+    const invalid = await loadMonitorConfig({
+      paths: [],
+      environment: { [AUTO_MERGE_ENV]: "yes" },
+      log: (message) => logs.push(message),
+    })
+
+    assert.equal(repositoryOnly.autoMerge, false)
+    assert.equal(enabled.autoMerge, true)
+    assert.equal(invalid.autoMerge, false)
+    assert.match(logs[0]!, new RegExp(AUTO_MERGE_ENV))
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -404,6 +438,153 @@ test("ready handoff follows label success and the watched target identity", asyn
   await session.stopAll({})
 })
 
+test("auto-merge startup clears a pre-existing ready label before requiring a fresh mark", async () => {
+  const calls: string[][] = []
+  const timers = timerHarness()
+  const channel = channelHarness()
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    if (args[0] === "api" && args[1] === "graphql") {
+      return payload({ labels: ["ready-for-human-review"] })
+    }
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({ state: "open", merged: false, title: "test PR 42", head: { sha: "head-42" } })
+    }
+    if (route.endsWith("/pulls/42/merge")) return JSON.stringify({ merged: true })
+    if (args.includes("DELETE")) return ""
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({
+    runGh,
+    loadConfig: async () => config({ autoMerge: true, announceOnStart: true }),
+    log: () => {},
+    schedule: timers.schedule,
+    cancel: timers.cancel,
+  })
+
+  const started = await session.execute({
+    action: MonitorAction.start,
+    pr: "sesori/example#42",
+    start: startOptions(channel),
+  })
+
+  assert.match(started.text, /pre-existing ready label .* was removed/)
+  assert.match(started.text, /call mark_ready/)
+  assert.match(channel.delivered[0]!, /Startup safety reset: pre-existing ready label/)
+  assert.match(channel.delivered[0]!, /Auto-merge: ENABLED/)
+  assert.equal(calls.some((args) => args.some((arg) => arg.endsWith("/merge"))), false)
+  assert.equal(calls.some((args) => args.includes("DELETE")), true)
+  assert.match((await session.execute({ action: MonitorAction.status, pr: undefined })).text, /auto-merge: squash/)
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+  assert.match(marked.text, /Auto-merge succeeded/)
+  const mergeCall = calls.find((args) => args.some((arg) => arg.endsWith("/merge")))
+  assert.equal(mergeCall?.includes("merge_method=squash"), true)
+  assert.equal(mergeCall?.includes("sha=head-42"), true)
+  assert.equal(mergeCall?.includes("commit_title=test PR 42"), true)
+  assert.equal(mergeCall?.includes("commit_message="), true)
+  assert.equal(calls.some((args) => args.includes("labels[]=automatically-merged")), true)
+  await session.stopAll({})
+})
+
+test("auto-merge startup fails closed when a pre-existing ready label cannot be removed", async () => {
+  const timers = timerHarness()
+  const channel = channelHarness()
+  const runGh: GhRunner = async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return payload({ labels: ["ready-for-human-review"] })
+    }
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({ state: "open", merged: false })
+    }
+    if (args.includes("DELETE")) throw new Error("label removal denied")
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({
+    runGh,
+    loadConfig: async () => config({ autoMerge: true }),
+    log: () => {},
+    schedule: timers.schedule,
+    cancel: timers.cancel,
+  })
+
+  const result = await session.execute({
+    action: MonitorAction.start,
+    pr: "sesori/example#42",
+    start: startOptions(channel),
+  })
+
+  assert.match(result.text, /auto-merge is enabled but the pre-existing ready label/)
+  assert.match(result.text, /label removal denied/)
+  assert.equal(session.list().length, 0)
+  assert.equal(timers.timers.length, 0)
+})
+
+test("standalone mark_ready auto-merges the captured head", async () => {
+  const calls: string[][] = []
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({
+        state: "open",
+        merged: false,
+        title: "Standalone title",
+        head: { sha: "standalone-head" },
+      })
+    }
+    if (route.endsWith("/pulls/42/merge")) return JSON.stringify({ merged: true })
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /label "ready-for-human-review" added/)
+  assert.match(marked.text, /Auto-merge succeeded/)
+  const mergeCall = calls.find((args) => args.some((arg) => arg.endsWith("/merge")))
+  assert.equal(mergeCall?.includes("sha=standalone-head"), true)
+  assert.equal(mergeCall?.includes("commit_title=Standalone title"), true)
+  assert.equal(mergeCall?.includes("commit_message="), true)
+})
+
+test("standalone merge rejection keeps the ready result and does not add the marker", async () => {
+  const calls: string[][] = []
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({
+        state: "open",
+        merged: false,
+        title: "Standalone title",
+        head: { sha: "standalone-head" },
+      })
+    }
+    if (route.endsWith("/pulls/42/merge")) {
+      return JSON.stringify({ merged: false, message: "Required review is missing" })
+    }
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /label "ready-for-human-review" added/)
+  assert.match(marked.text, /Required review is missing/)
+  assert.match(marked.text, /ready label remains and no automatic retry will occur/)
+  assert.equal(marked.ready?.ready, true)
+  assert.equal(calls.some((args) => args.includes("labels[]=automatically-merged")), false)
+})
+
 test("tool wording makes autonomous delivery and the no-delay rule explicit", () => {
   const description = buildMonitorToolDescription({
     delivery: "reports arrive here.",
@@ -418,4 +599,6 @@ test("tool wording makes autonomous delivery and the no-delay rule explicit", ()
   assert.match(description, /configured ready label/)
   assert.match(description, /automatically adds readiness/)
   assert.match(description, /unconditionally accept current state/)
+  assert.match(description, /SESORI_PR_MONITOR_AUTO_MERGE=true/)
+  assert.match(description, /squash-merge attempt for the accepted head using only the PR title/)
 })

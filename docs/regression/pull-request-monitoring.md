@@ -40,8 +40,9 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   terminal stop notice through the shell's persistent channel where one exists, because the failed delivery channel
   itself cannot carry it.
 - Merge/close produces one terminal report and removes the watch. Explicit stop, session cleanup, and failed starts
-  leave no timer. Cleanup drains an already-started label mutation before unregistering the watch, so a successor
-  cannot race a stale add/remove; it does not wait for a stalled fetch or report delivery. A cleanup crossing an
+  leave no timer. Cleanup drains an already-started readiness operation before unregistering the watch, including
+  an auto-merge already in flight. If stop wins while the label call is pending, it fences the not-yet-started merge.
+  Cleanup does not wait for a stalled fetch or report delivery. A cleanup crossing an
   in-flight start still prevents late registration.
 
 ### Ready-label lifecycle
@@ -61,18 +62,39 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 - `mark_ready` verifies an open PR, best-effort creates the green label, accepts all activity currently observed by
   an active watch without eligibility restrictions, and succeeds only after GitHub adds the label. Later activity
   still withdraws it. `unmark_ready` removes the label now but creates no persistent suppression of auto-readiness.
-- Automatic mutation failure is reported truthfully and retried. Claude handoff/keep-alive follows confirmed label
-  state rather than every report delivery; a readiness-preserving report does not reopen keep-alive.
+- Automatic ready-label mutation failure is reported truthfully and retried. Claude handoff/keep-alive follows
+  confirmed label state rather than every report delivery; a readiness-preserving report does not reopen keep-alive.
 - Every report and stop notice states last-known readiness. An open, unready report instructs the agent to continue
   work or use `mark_ready` when judgment says no action remains. Terminal reports preserve the label and omit that
   work instruction.
 
+### Environment-gated auto-merge
+
+- `SESORI_PR_MONITOR_AUTO_MERGE=true` or `1` enables auto-merge from the host process environment. Unset, `false`,
+  `0`, and empty values disable it; any other value fails closed with a warning. Repository configuration cannot
+  enable it.
+- Only successfully completed readiness transitions performed by the monitor and successful `mark_ready` actions
+  trigger one merge attempt. Observing an externally added ready label does not; neither does observing readiness
+  after a failed/ambiguous label mutation. Both watched and standalone `mark_ready` are covered.
+- The ready label is applied first. The squash merge is fenced to the accepted head SHA, uses the current PR title as
+  `commit_title`, and sends an explicitly empty `commit_message`; PR body text is never copied into the commit body.
+- A successful merge best-effort creates and applies the fixed blue `automatically-merged` label. Failure to add that
+  marker is reported without misreporting or attempting to undo the completed merge.
+- A rejected merge leaves readiness present, reports that no automatic retry will occur, and does not retry while
+  that readiness state stays unchanged. A later readiness transition or explicit `mark_ready` is a new attempt.
+- Reports, start results, status, tool wording, commands, and shipped skills expose enabled state and its irreversible
+  consequence. Every host uses the same core/runtime implementation and the environment inherited by its process.
+
 ### Startup and restart assessment
 
-- Startup reports preserve the existing label without adding it automatically. This also applies when startup
-  announcements are disabled or initial delivery is retried. Unchanged polls or a flush of unchanged initial state
-  do not add the label. Later observed CI completion and feedback handling retain automatic readiness, including
-  when that activity arrives before a failed initial delivery is retried or manually flushed.
+- Startup reports normally preserve the existing label without adding it automatically. With auto-merge enabled,
+  an open PR carrying the ready label has that label removed before watch registration; start fails if removal cannot
+  be confirmed. The start result and, when announcements are enabled, initial report identify the reset and require
+  fresh assessment plus an explicit `mark_ready` if the PR is ready. When startup announcements are disabled, the
+  start result remains the notice. Startup never merges merely from stale or externally observed label state.
+- Unchanged polls or a flush of unchanged initial state do not add the label. Later observed CI completion and
+  feedback handling retain automatic readiness, including when that activity arrives before a failed initial
+  delivery is retried or manually flushed.
 - An initial report requires the same substantive attention as later reports. After a harness restart, an agent
   inspects current-head CI, expected automated reviews and existing feedback, then calls `mark_ready` immediately
   if the PR is settled and nothing remains. It must not wait for new activity that may never occur.
@@ -175,21 +197,22 @@ watch's captured label/prefix so automation and manual override cannot target di
 its start-time config. Loading is permissive: first readable valid JSON wins, unknown keys and invalid values fall
 back independently, and invalid JSON is logged before the next candidate/defaults are used. `ignoreCommentTag`
 defaults to
-`<!-- pr-monitor:reply -->` and matches only at the beginning of a local-account comment.
+`<!-- pr-monitor:reply -->` and matches only at the beginning of a local-account comment. Auto-merge is resolved
+fresh from the host environment at each config load and cannot be enabled by any of these project files.
 
 ## Regression Levels
 
 - **L1 Smoke:** Core/runtime and every adapter load; one tool and one skill are visible per host; a fake open PR can
   start, report, and stop.
 - **L2 Routine:** Automated activity/readiness, acknowledgement ordering, same-account follow-ups,
-  debounce/hold/urgency, report baselines, mutation/delivery retry, actions, races, and timer cleanup on Node 22
-  across Linux, macOS, and Windows.
+  debounce/hold/urgency, report baselines, mutation/delivery retry, environment parsing, head-fenced title-only
+  auto-merge calls, startup reset, actions, races, and timer cleanup on Node 22 across Linux, macOS, and Windows.
 - **L3 Release:** Shared-session adapter contracts represent OpenCode, Claude, Pi, and OMP. Packed OpenCode plus
   bundled Claude checks cover owning-session delivery, reload/process lifecycle, spool/hook injection, and handoff.
 - **L4 Extended:** Actual minimum and current Pi/OMP loaders, busy/idle steering, trust/config paths, successful and
   canceled transitions, and required OS rows.
 - **L5 Full:** Packaged hosts against an authenticated disposable GitHub PR: initial/ordinary/urgent/terminal
-  reports, handoff/withdrawal, and cleanup.
+  reports, handoff/withdrawal, environment-enabled auto-merge plus marker creation, and cleanup.
 
 ## Exploration Guidance
 
@@ -197,7 +220,8 @@ Vary initial versus post-start activity, same-second comments, resolved-thread f
 unprefixed local-user follow-ups, bot acknowledgements, review summaries, head changes, running/concluded/no CI,
 transient `UNKNOWN`, delivery failure, and casing. Cross lifecycle boundaries while a start, poll, label mutation, or
 report is in flight. Vary automatic/manual add, automatic withdrawal, mutation retry, existing/missing label, plain
-issue, and terminal PR.
+issue, and terminal PR. Exercise enabled/disabled/invalid auto-merge environment values, stale head rejection,
+startup with a ready label, merge rejection, and marker-label failure.
 
 ## Failure Signals
 
@@ -208,6 +232,9 @@ issue, and terminal PR.
   warning needed to distinguish new human feedback from an earlier agent reply.
 - A failed label mutation changes handoff, a plain issue is labeled as a PR, a resolution-only report withdraws
   readiness, or a manual mark is immediately undone by state it explicitly accepted.
+- Repository config can enable auto-merge; startup auto-merges or preserves a stale ready label while auto-merge is
+  enabled; a merge is not head-fenced; squash commit body is non-empty; merge failure removes readiness or retries
+  unchanged state; or a successful merge is falsely reported as failed solely because marker labeling failed.
 - A canceled session transition loses a watch, a successful transition retains an old timer, or an old session
   delivers into/removes readiness from a successor watch.
 - An agent creates a second wait/poll mechanism, Pi/OMP fails to trigger an idle turn, or a host discovers duplicate
@@ -230,6 +257,7 @@ issue, and terminal PR.
 ## Sources
 
 `core/watch.ts`, `core/activity.ts`, `core/readiness.ts`, `core/report.ts`, `core/github.ts`, `core/label.ts`,
+`core/merge.ts`,
 `runtime/monitor-session.ts`, `runtime/tool.ts`, `opencode/index.ts`, `claude-codex/src/`, `claude-codex/hooks/`,
 `pi/extension.ts`, `pi/index.ts`, `pi/omp.ts`, `skills/monitor-pr/SKILL.md`,
 `claude-codex/skills/monitor-pr/SKILL.md`, and `test/*.test.ts`.
