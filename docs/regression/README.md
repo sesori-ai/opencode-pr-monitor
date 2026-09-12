@@ -26,7 +26,7 @@ Use the shortest boundary that observes the complete invariant:
 |---|---|
 | Automated | Pure state, parsing, report rendering, deterministic timing, and error rollback. |
 | Adapter contract | Host API registration, delivery options, session ownership, and lifecycle using controlled fakes. |
-| Actual host | A real OpenCode, Claude Code, Pi, or OMP loader/session must interpret or deliver the behavior. |
+| Actual host | A real OpenCode, Claude Code, Codex, Pi, OMP, or Hermes loader/session must interpret or deliver the behavior. |
 | Packaged or external | npm/Git installation, release contents, GitHub, or another production service is part of the claim. |
 
 A source import does not prove a packed artifact. A fake host does not prove actual loader compatibility. One host
@@ -37,8 +37,9 @@ or platform proves only that matrix row unless the owning feature document expli
 Every required row names the dimensions that affect its claim:
 
 - **boundary:** automated, adapter contract, actual host, or packaged/external;
-- **artifact:** source tree, generated bundle, npm tarball/install, or Claude Git plugin root;
-- **host/version:** OpenCode, Claude Code, Pi, OMP, GitHub CLI, and every minimum/current version the feature names;
+- **artifact:** source tree, generated bundle, npm tarball/install, Claude/Codex Git plugin root, or Hermes plugin;
+- **host/version:** OpenCode, Claude Code, Codex, Pi, OMP, Hermes, GitHub CLI, and every minimum/current version the
+  feature names;
 - **platform/runtime:** operating system plus Node/Bun/host runtime where behavior can differ;
 - **variation:** normal, failure, lifecycle, race, recovery, trust, config, or compatibility path; and
 - **external fixture:** disposable GitHub repository/PR, authenticated identity, labels, CI, and cleanup state.
@@ -74,9 +75,9 @@ name the owning source/tests, highest level, proof boundary, and required host/p
 - [`pull-request-monitoring.md`](pull-request-monitoring.md) — shared watch/activity/report semantics, autonomous
   ownership, ready-label handoff, host delivery/lifecycle, and configuration. Highest level: L5; primary boundaries:
   automated through packaged/external.
-- [`plugin-installation.md`](plugin-installation.md) — OpenCode and Pi/OMP npm archives, Claude Git plugin root,
-  exactly-once skill discovery, loader compatibility, release metadata, and publish order. Highest level: L5;
-  primary boundaries: packaged/actual-host/external.
+- [`plugin-installation.md`](plugin-installation.md) — OpenCode and Pi/OMP npm archives, the shared Claude/Codex Git
+  plugin root, Hermes Git-plugin artifacts, exactly-once skill discovery, loader compatibility, release metadata,
+  and publish order. Highest level: L5; primary boundaries: packaged/actual-host/external.
 
 A behavior appearing in both files is not duplicate evidence: monitoring proves the runtime outcome, while
 installation proves that the released artifact exposes the path capable of producing it.

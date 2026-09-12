@@ -2,9 +2,10 @@
 
 ## Capability
 
-One repository publishes two independently installable npm artifacts and one Claude Code Git plugin while keeping
-private core/runtime code in lockstep. OpenCode has its own package; Pi and OMP intentionally share one package with
-two entries; Claude Code installs from the repository plugin root without a build step.
+One repository publishes two independently installable npm artifacts, one shared Claude Code/Codex Git plugin, and
+one Hermes Git plugin while keeping private core/runtime code in lockstep. OpenCode has its own package; Pi and OMP
+share one package with two entries; Claude Code and Codex share a plugin root; and Hermes installs its self-contained
+subdirectory. Git plugin installs require no build step.
 
 The highest required regression level is **L5 Full** because release confidence depends on exact packed contents,
 real host loaders, package registries/Git installation, and synchronized metadata.
@@ -17,8 +18,8 @@ real host loaders, package registries/Git installation, and synchronized metadat
   be published and is intentionally excluded from product-version equality.
 - `core/` and `runtime/` are private implementation source, not a public package. Each npm build bundles reachable
   private modules so a release cannot depend on an unpublished core version.
-- OpenCode/Pi `dist/` and generated package skill copies are ephemeral and ignored. Claude Code's MCP bundle is
-  committed because Git plugin installation runs no build.
+- OpenCode/Pi `dist/` and generated package skill copies are ephemeral and ignored. The Claude/Codex MCP bundle and
+  Hermes worker/tool/skill artifacts are committed because Git plugin installation runs no build.
 
 ### `@sesori/pr-monitor-opencode`
 

@@ -47,7 +47,9 @@ Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted pr
 readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
 an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
 removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
-`automatically-merged` label. See the root README for failure behavior and setup details.
+`automatically-merged` label. See the repository's
+[auto-merge guide](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md#auto-merge) for
+failure behavior and safety details.
 
 ## Configuration
 
@@ -61,10 +63,12 @@ the project is trusted. Available settings:
 - `announceOnStart` and `flushOnCiFailure`
 - `readyLabel` and `autoMerge`
 
-See the [repository README](https://github.com/sesori-ai/pr-monitor-plugin#readme)
-for action semantics, defaults, and development/release instructions. Durable behavior and artifact checks are in
-the repository's [regression catalog](https://github.com/sesori-ai/pr-monitor-plugin/tree/main/docs/regression):
-`pull-request-monitoring.md` and `plugin-installation.md`.
+See the repository guides for
+[monitor behavior](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/behavior.md),
+[configuration](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md), and
+[development/releases](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/development.md). Durable behavior
+and artifact checks are cataloged in the
+[regression directory](https://github.com/sesori-ai/pr-monitor-plugin/tree/main/docs/regression).
 
 ## License
 
