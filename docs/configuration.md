@@ -2,50 +2,54 @@
 
 [← README](../README.md)
 
-Defaults work without a config file. Add global configuration for personal preferences or project configuration for
-repository-specific behavior.
+You do not need a config file. The defaults work out of the box. When you want to change something, put personal
+preferences in a global file and repository-specific settings in a project file.
 
-## Locations and precedence
+## Where config lives
 
-Global configuration applies to every host:
+**Global** settings apply to every host and every repository:
 
 ```text
 ~/.config/pr-monitor/config.json
 ```
 
-If `XDG_CONFIG_HOME` is an absolute path, PR Monitor uses
-`$XDG_CONFIG_HOME/pr-monitor/config.json` instead. Relative `XDG_CONFIG_HOME` values are ignored.
+If `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/pr-monitor/config.json` instead. A
+relative `XDG_CONFIG_HOME` is ignored.
 
-Project paths are checked in order. The first successfully parsed project file is used; unreadable files are skipped,
-and malformed JSON is logged before checking the next candidate:
+**Project** settings live in the repository. Each host checks a few paths and uses the first one that parses:
 
-| Host | Project configuration search order |
+| Host | Project files, in order |
 |---|---|
-| OpenCode | `.pr-monitor.json` → `.opencode/pr-monitor.json` |
-| Claude Code | `.pr-monitor.json` → `.claude/pr-monitor.json` → `.opencode/pr-monitor.json` |
-| Codex | `.pr-monitor.json` → `.codex/pr-monitor.json` → `.opencode/pr-monitor.json` |
-| Pi | `.pr-monitor.json` → `.pi/pr-monitor.json` → `.opencode/pr-monitor.json` |
-| OMP | `.pr-monitor.json` → `.omp/pr-monitor.json` → `.opencode/pr-monitor.json` |
-| Hermes | `.pr-monitor.json` → `.hermes/pr-monitor.json` → `.opencode/pr-monitor.json` |
+| OpenCode | `.pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| Claude Code | `.pr-monitor.json`, then `.claude/pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| Codex | `.pr-monitor.json`, then `.codex/pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| Pi | `.pr-monitor.json`, then `.pi/pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| OMP | `.pr-monitor.json`, then `.omp/pr-monitor.json`, then `.opencode/pr-monitor.json` |
+| Hermes | `.pr-monitor.json`, then `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json` |
 
-Pi reads project-local configuration only after project trust. Global configuration remains available before trust.
+Pi and OMP only read project files once you have trusted the project. Global config is always read.
 
-Values resolve in this order:
+### How settings combine
+
+Later layers override earlier ones:
 
 1. built-in defaults;
-2. global configuration;
-3. first successfully parsed project configuration; then
-4. explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment override for `autoMerge` only.
+2. the global file;
+3. the first project file that parses; and
+4. the `SESORI_PR_MONITOR_AUTO_MERGE` environment variable, which affects `autoMerge` only.
 
-Valid project values replace matching global values. Unknown keys are ignored. Invalid values in valid JSON leave
-the lower layer unchanged; malformed JSON is logged and skipped. Configuration is loaded for each new watch and
-standalone ready action. An
-active watch keeps the values captured when it started.
+A project file only replaces the keys it sets. Unknown keys are ignored. An invalid value keeps the value from the
+layer below. A file that is not valid JSON is logged and skipped, and the next candidate is tried.
 
-> Project configuration can enable auto-merge. Review configuration in untrusted repositories before starting a
-> monitor with a GitHub account that can merge.
+Settings are read each time a monitor starts or a standalone ready action runs. A monitor that is already running
+keeps the settings it started with.
 
-## Complete example
+> A project file can turn on auto-merge. In a repository you do not trust, check its config before starting a
+> monitor with a GitHub account that is allowed to merge.
+
+## All settings
+
+Every key with its default value:
 
 ```json
 {
@@ -63,51 +67,51 @@ active watch keeps the values captured when it started.
 }
 ```
 
-## Settings
-
 ### Reporting
 
-| Key | Default | Purpose |
+| Key | Default | What it does |
 |---|---:|---|
-| `debounceMinutes` | `2` | Quiet window after ordinary activity. New activity resets it. |
-| `maxCiWaitMinutes` | `30` | Maximum hold for a due report while CI remains running. |
-| `pollIntervalSeconds` | `60` | Poll interval per PR, clamped from 30 seconds to 24 hours. |
-| `announceOnStart` | `true` | Send a full initial status report when a watch starts. |
-| `flushOnCiFailure` | `true` | Report the first new failure per head immediately instead of debouncing. |
+| `debounceMinutes` | `2` | How long the PR must stay quiet before a batched report goes out. New activity restarts the timer. |
+| `maxCiWaitMinutes` | `30` | How long a due report may wait for running CI to finish. |
+| `pollIntervalSeconds` | `60` | How often each PR is polled. Clamped between 30 seconds and 24 hours. |
+| `announceOnStart` | `true` | Send a full status report as soon as a monitor starts. |
+| `flushOnCiFailure` | `true` | Report the first CI failure on a commit right away instead of batching it. |
 
-`maxCiWaitMinutes` limits idle waiting for CI; after the limit, the report names unfinished checks. Later failures on
-the same head ride with the suite-conclusion report instead of creating one notification per matrix job.
+When `maxCiWaitMinutes` runs out, the report goes out anyway and names the checks still running. Once the first CI
+failure on a commit has been reported, later failures on the same commit ride along with the normal report instead
+of each sending their own.
 
 ### Feedback and readiness
 
-| Key | Default | Purpose |
+| Key | Default | What it does |
 |---|---:|---|
-| `ignoreCommentTag` | `<!-- pr-monitor:reply -->` | Required prefix for agent-authored GitHub replies. |
-| `readyLabel` | `ready-for-human-review` | Label managed by automatic readiness and ready actions. |
-| `autoMerge` | `false` | Attempt one safe squash merge after monitor-owned readiness. |
+| `ignoreCommentTag` | `<!-- pr-monitor:reply -->` | The prefix every agent-written GitHub reply must start with. |
+| `readyLabel` | `ready-for-human-review` | The label added when a PR is ready and removed when it is not. |
+| `autoMerge` | `false` | Squash-merge the PR once it is ready. See [auto-merge](#auto-merge). |
 
-The reply prefix must be the first text in a local-account comment. A local comment without it is treated as human
-feedback. Prefixed replies do not count as new relevant comments, but they remain acknowledgement evidence.
+The reply prefix has to be the very first text in a comment from the monitoring account. A comment without it
+counts as human feedback. Comments with it do not count as new activity, but they do count as proof that feedback
+was answered.
 
-### Claude Code and Codex delivery
+### Claude Code and Codex only
 
-These keys are read only by the shared Claude Code/Codex adapter:
+Only the shared Claude Code and Codex adapter reads these:
 
-| Key | Default | Purpose |
+| Key | Default | What it does |
 |---|---:|---|
-| `desktopNotifications` | `false` | Show an OS notification when a report is delivered or spooled. |
-| `keepAlive` | `true` | Keep fallback hook delivery active until readiness handoff. |
-| `keepAliveMaxMinutes` | `120` | Maximum quiet time for the fallback keep-alive loop. |
+| `desktopNotifications` | `false` | Show an OS notification when a report is delivered or queued. |
+| `keepAlive` | `true` | Keep the hook-based delivery loop running until the ready handoff. |
+| `keepAliveMaxMinutes` | `120` | Longest quiet stretch the hook-based loop will wait. |
 
-Push-capable Claude Code sessions ignore keep-alive settings because incoming reports already start turns. Codex
-and socketless Claude Code sessions use them as described in the [installation guide](installation.md).
+Claude Code sessions with a messaging socket ignore the keep-alive settings, because pushed reports already start
+turns. Codex and socketless Claude Code sessions use them as described in the [host guide](hosts.md).
 
 ## Auto-merge
 
-> **Warning:** merging is irreversible. Enable auto-merge only in personal configuration or a trusted repository
-> whose authenticated GitHub account should be allowed to merge its pull requests.
+> **Merging cannot be undone.** Turn auto-merge on only in your personal config or in a repository you trust, using
+> a GitHub account that is meant to merge that repository's pull requests.
 
-Enable it in global or project configuration:
+Turn it on in the global or a project file:
 
 ```json
 {
@@ -115,46 +119,47 @@ Enable it in global or project configuration:
 }
 ```
 
-An explicitly defined environment value overrides both files:
+Or with an environment variable, which wins over both files:
 
-- `true` or `1` enables auto-merge;
-- `false`, `0`, or an empty value disables it; and
-- any other value fails closed, disables it, and logs a warning.
+- `true` or `1` turns it on;
+- `false`, `0`, or an empty value turns it off; and
+- anything else turns it off and logs a warning.
 
 ```sh
-# Shell-launched hosts
+# Hosts started from a shell
 export SESORI_PR_MONITOR_AUTO_MERGE=true
 
-# macOS GUI hosts for this login session; restart the app afterward
+# macOS GUI apps, for this login session; restart the app afterwards
 launchctl setenv SESORI_PR_MONITOR_AUTO_MERGE true
 ```
 
-### What triggers a merge
+### When it merges
 
-Only a completed readiness transition owned by PR Monitor authorizes a merge:
+PR Monitor merges only after a readiness change it made itself:
 
-- automatic readiness from an active watch; or
-- a successful watched or standalone `mark_ready` action.
+- automatic readiness from a running monitor; or
+- a successful `mark_ready`, with or without a running monitor.
 
-Observing a label added externally does not trigger a merge. A failed or ambiguous label mutation does not trigger
-one either.
+Seeing a ready label that someone else added never triggers a merge. Neither does a label change that failed or
+whose result is unclear.
 
-### Safety guarantees
+### How it stays safe
 
-- **Fresh startup assessment.** Starting a monitor with auto-merge enabled removes a pre-existing ready label and
-  requires fresh agent assessment before `mark_ready` can authorize a merge.
-- **Head fencing.** Standalone `mark_ready` captures the head before adding readiness and checks it again afterward.
-  A changed or unverifiable head cancels the merge and attempts to withdraw readiness.
-- **One exact merge.** The request is fenced to the accepted head SHA, always uses squash mode, uses the PR title as
-  the commit title, and sends an explicitly empty commit-message body.
-- **No blind replay.** After an ambiguous transport, timeout, malformed, or server failure, PR Monitor re-queries
-  GitHub once. A merged matching head proves success; an unproven outcome remains unknown without retrying.
-- **Definitive failures stay definitive.** GitHub 4xx rejection reasons are reported directly. HTTP 409 invalidates
-  the accepted head.
-- **No unchanged retry.** Rejected or unknown outcomes keep readiness in place and are not retried automatically
-  while that readiness state remains unchanged. A later readiness transition or explicit `mark_ready` is a new
-  attempt.
-- **Merge marker.** Confirmed success dynamically creates and applies the blue `automatically-merged` label. Marker
-  failure is reported as a warning but cannot undo the merge.
+- **Fresh look at startup.** Starting a monitor with auto-merge on removes any ready label that is already there.
+  The agent has to assess the PR again before `mark_ready` can lead to a merge.
+- **Same commit or no merge.** A standalone `mark_ready` notes the head commit before adding the label and checks
+  it again afterwards. If the commit changed or cannot be verified, the merge is cancelled and the label is taken
+  off again.
+- **One exact merge.** The request is pinned to the accepted commit, always squashes, uses the PR title as the
+  commit title, and sends an empty commit body.
+- **No blind retries.** If GitHub's answer is lost, times out, is malformed, or is a server error, PR Monitor asks
+  GitHub once whether the PR merged at that commit. If it did, that is success. If not, the outcome stays unknown
+  and nothing is retried.
+- **Clear rejections stay clear.** A GitHub 4xx rejection is reported with its reason. A 409 means the accepted
+  commit is no longer valid.
+- **No retry while nothing changed.** A rejected or unknown merge keeps the ready label and is not retried until
+  readiness changes again or someone calls `mark_ready`.
+- **A marker on success.** A confirmed merge gets a blue `automatically-merged` label, created on the fly if needed.
+  If adding the label fails, that is reported as a warning. The merge itself is already done.
 
-See [monitor behavior](behavior.md) for readiness and feedback semantics.
+See [how the monitor decides](behavior.md) for readiness and feedback rules.

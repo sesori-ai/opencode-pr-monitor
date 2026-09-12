@@ -1,74 +1,64 @@
 # @sesori/pr-monitor-pi
 
-Pi and Oh My Pi (OMP) extension that watches GitHub pull requests, manages
-ready-for-human-review state, and delivers `[PR Monitor]` reports into the active session.
+Pi and Oh My Pi (OMP) extension that watches your GitHub pull requests and posts `[PR Monitor]` status reports back
+into the session that opened them. It also manages the ready-for-human-review label.
 
 ## Install
 
-Pi 0.84.2 or newer:
+Needs a logged-in GitHub CLI (`gh auth status`).
+
+Pi 0.84.2 or newer, with Node.js 22.19 or newer:
 
 ```sh
 pi install npm:@sesori/pr-monitor-pi
 ```
 
-OMP 18.0.3 or newer:
+OMP 18.0.3 or newer, using the Bun runtime bundled with OMP:
 
 ```sh
 omp plugin install @sesori/pr-monitor-pi
 ```
 
-The package supplies the upstream entry to Pi and the OMP compatibility entry
-to OMP automatically. Requirements: Node.js 22.19 or newer for Pi (or the Bun
-runtime bundled with OMP), plus an installed and authenticated GitHub CLI
-(`gh auth status`).
+The package gives Pi its upstream entry and OMP its compatibility entry automatically. Nothing else to configure.
 
-## Behavior
+## What it does
 
-The extension registers `pr_monitor` actions for `start`, `stop`, `flush`,
-`status`, `mark_ready`, and `unmark_ready`. It reports commits, CI,
-reviews/comments, conflicts, and terminal state. It automatically adds
-readiness when the current head is clean and feedback is acknowledged, then
-withdraws it on later commits or relevant feedback. Every report states
-readiness, contains no comment bodies, and is delivered through the host's
-native custom message API with turn triggering enabled.
+The extension adds a `pr_monitor` tool with `start`, `stop`, `flush`, `status`, `mark_ready`, and `unmark_ready`
+actions, plus one `monitor-pr` skill. The skill tells the agent to start a monitor right after opening a PR, act on
+every report, mark its GitHub replies with the reply prefix so the monitor can recognise them, and end its turn
+instead of building its own wait loop.
 
-The package also supplies one `monitor-pr` skill. It teaches the agent to start
-a monitor immediately after opening a PR, handle every automatic report, use
-prefixed replies as acknowledgement evidence, and end the turn instead of making
-its own wait or polling loop.
+Reports cover new commits, CI, reviews and comments, merge conflicts, and the PR merging or closing. Each one says
+whether the PR is ready for human review and never quotes comment bodies. Reports are delivered through the host's
+native custom-message API and can start a turn when the agent is idle. When CI is green, the PR is mergeable, and
+all feedback has been answered, the monitor adds the ready label. A new commit or new feedback removes it again.
 
-Monitors are in memory and belong to the active agent session. Pi clears them
-when the current extension instance shuts down after a successful session
-replacement or reload. OMP clears them after its successful session-switch
-event. Canceled transitions leave the current monitor untouched. Neither host
-restores monitors after process restart.
-
-Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
-readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
-an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
-removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
-`automatically-merged` label. See the repository's
-[auto-merge guide](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md#auto-merge) for
-failure behavior and safety details.
+Monitors live in memory and belong to the active session. Pi clears them when the extension shuts down after a
+successful session new, resume, fork, or reload. OMP clears them after a successful session switch. A canceled
+transition leaves them alone. Neither host restores monitors after a process restart.
 
 ## Configuration
 
-Global `~/.config/pr-monitor/config.json` supplies defaults. A trusted project then uses repository
-`.pr-monitor.json`, `${CONFIG_DIR_NAME}/pr-monitor.json` (`.pi` in Pi and `.omp` in OMP), then
-`.opencode/pr-monitor.json`. Pi ignores all project-local monitor config until
-the project is trusted. Available settings:
+Global settings live in `~/.config/pr-monitor/config.json`. Once a project is trusted, it can override them in
+`.pr-monitor.json`, then `.pi/pr-monitor.json` (`.omp/pr-monitor.json` in OMP), then `.opencode/pr-monitor.json`.
+Pi ignores project-local settings until you trust the project. Settings:
 
 - `debounceMinutes`, `maxCiWaitMinutes`, and `pollIntervalSeconds`
-- `ignoreCommentTag` (mandatory agent-reply prefix; default `<!-- pr-monitor:reply -->`)
+- `ignoreCommentTag`, the prefix agent replies must start with (default `<!-- pr-monitor:reply -->`)
 - `announceOnStart` and `flushOnCiFailure`
 - `readyLabel` and `autoMerge`
 
-See the repository guides for
-[monitor behavior](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/behavior.md),
+To merge ready PRs automatically, set `autoMerge: true` in the global file or a trusted project file. Project config
+overrides global config, and an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With
+auto-merge on, starting a monitor removes any ready label that is already there and asks the agent to reassess.
+Merged PRs get an `automatically-merged` label. Read the
+[auto-merge guide](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md#auto-merge)
+before turning it on.
+
+More in the repository docs:
+[how the monitor decides](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/behavior.md),
 [configuration](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/configuration.md), and
-[development/releases](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/development.md). Durable behavior
-and artifact checks are cataloged in the
-[regression directory](https://github.com/sesori-ai/pr-monitor-plugin/tree/main/docs/regression).
+[development and releases](https://github.com/sesori-ai/pr-monitor-plugin/blob/main/docs/development.md).
 
 ## License
 

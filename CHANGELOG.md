@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrote the user-facing docs in plainer language. The root README now carries the install steps for every host up
+  front, followed by a short usage, configuration, and limits overview. `docs/installation.md` is now
+  `docs/hosts.md` and covers only per-host delivery, lifecycle, and troubleshooting. The configuration and behavior
+  guides and the package READMEs were reworded without changing what they document.
+
 ## [0.5.0]
 
 ### Added
