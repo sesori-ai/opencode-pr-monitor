@@ -19,9 +19,10 @@ with `skill_view(name="pr-monitor:monitor-pr")`. Agents end their turn while the
 
 ## Delivery and lifecycle
 
-- **Desktop/TUI:** reports enter the original live conversation through its background-turn entry point. An idle conversation
-  starts a turn; a busy conversation accepts a native active-turn redirect (or steer during tool execution). Switching tabs
-  does not retarget delivery. User-composed attachments are preserved. Merge/close reports use the same path, even after readiness handoff.
+- **Desktop/TUI:** reports enter the original live conversation through its background-turn entry point. An idle
+  conversation starts a turn; a busy conversation accepts a native active-turn redirect (or steer during tool
+  execution). Switching tabs does not retarget delivery. User-composed attachments are preserved. Merge/close
+  reports use the same path, even after readiness handoff.
 - **CLI, messaging gateways, ACP (including Hermes through Sesori), and Desktop `dashboard.turn_isolation: true`:**
   background monitoring is unsupported and `start` fails explicitly. Native CLI/gateway injection does not bind
   queued reports to the original durable conversation, so switching or resetting a conversation could retarget them.
@@ -41,7 +42,8 @@ Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted pr
 readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
 an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
 removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
-`automatically-merged` label. See the root README for failure behavior and setup details.
+`automatically-merged` label. See [configuration and auto-merge safety](../docs/configuration.md#auto-merge) for
+failure behavior and setup details.
 
 ## Compatibility boundary
 

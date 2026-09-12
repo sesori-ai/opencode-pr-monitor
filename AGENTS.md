@@ -4,7 +4,10 @@ Quick orientation for agents working on this repo. Read this before exploring; i
 
 ## What this is
 
-`pr-monitor` is a GitHub PR watcher that posts factual status updates back into the owning agent session. It targets **OpenCode** (`opencode/`), **Claude Code and Codex** (`claude-codex/`, one plugin root serving both hosts), and the shared **Pi/OMP** package (`pi/`), all built on the same core (`core/`) and session runtime (`runtime/`).
+`pr-monitor` is a GitHub PR watcher that posts factual status updates back into the owning agent session. It targets
+**OpenCode** (`opencode/`), **Claude Code and Codex** (`claude-codex/`, one plugin root serving both hosts), the shared
+**Pi/OMP** package (`pi/`), and **Hermes** (`hermes/`), all built on the same core (`core/`) and session runtime
+(`runtime/`).
 
 ## Project layout
 
@@ -71,6 +74,8 @@ claude-codex/         # Claude Code + Codex shell. THIS DIRECTORY IS THE PLUGIN 
   dist/
     mcp-server.mjs   # committed esbuild bundle (plugin installs run NO build step — rebuild + commit on change).
 
+hermes/              # Python plugin + Desktop seam + committed bundled Node worker and generated tool/skill.
+
 .claude-plugin/
   marketplace.json # MUST stay at the repo root — `/plugin marketplace add <repo>` reads it from there.
                    # Its plugin entry points at the plugin root with "source": "./claude-codex";
@@ -106,7 +111,7 @@ one-shot worker; actions for an existing Desktop watch reuse its worker and capt
 a new Desktop gateway to find a conversation or use foreground selection as delivery identity. Update `docs/regression/hermes.md` for host evidence.
 Hermes plugin version is part of the lockstep release check. Rebuild and commit its artifacts on shared changes.
 
-## Core flow (both shells)
+## Core flow (all adapters)
 
 1. **start** — adapter calls its session's `MonitorSession` → parse/dedupe → load config/auth → fetch initial snapshot → reject if not `OPEN` → `new PrWatch(...)` → arm the owned interval.
 2. **tick** — `PrWatch.tick()` (`core/watch.ts`): fetch snapshot → detect activity/readiness invalidation → mutate

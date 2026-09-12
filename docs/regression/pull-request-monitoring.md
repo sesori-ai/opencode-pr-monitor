@@ -4,8 +4,8 @@
 
 A coding-agent session can watch explicit GitHub pull requests, receive readiness-aware `[PR Monitor]` reports when
 head, review, comment, CI, mergeability, or terminal state changes, and automatically manage a handoff label.
-OpenCode, Claude Code, Codex, Pi, and OMP share the same per-PR state machine and session runtime while retaining host-native
-delivery and lifecycle ownership.
+OpenCode, Claude Code, Codex, Pi, OMP, and Hermes share the same per-PR state machine and session runtime while
+retaining host-native delivery and lifecycle ownership.
 
 The highest required regression level is **L5 Full** because the complete claim crosses published artifacts, real
 host loaders, authenticated GitHub state, and ready-label mutation.

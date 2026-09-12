@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Restructured the root README around a short product overview, host chooser, quick start, and documentation index.
+  Detailed installation, host lifecycle, configuration, monitor behavior, development, and release guidance now
+  lives in focused documents, with Hermes presented alongside every other supported host.
 - Document Codex's post-handoff idle-delivery limitation: merged/closed reports remain in the owning conversation's
   spool until another prompt or hook event.
 - Codex setup now explicitly requires review of all four delivery hooks, with terminal instructions for Sesori,
