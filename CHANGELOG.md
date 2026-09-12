@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   front, followed by a short usage, configuration, and limits overview. `docs/installation.md` is now
   `docs/hosts.md` and covers only per-host delivery, lifecycle, and troubleshooting. The configuration and behavior
   guides and the package READMEs were reworded without changing what they document.
+- Tightened three wordings from that rewrite: `start` reports current state only when `announceOnStart` is on,
+  readiness is withdrawn by a later CI failure rather than one already accepted by `mark_ready`, and mergeability
+  counts as activity when it changes from its last definite value.
 
 ## [0.5.0]
 
