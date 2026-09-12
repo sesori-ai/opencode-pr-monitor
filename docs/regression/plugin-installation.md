@@ -185,13 +185,16 @@ scope, so package name/version/access and exact tarball contents must be checked
 
 ## Configuration Installation Contract
 
-No installer writes project monitor configuration. Users may add `.pr-monitor.json`; host fallbacks are:
+No installer writes monitor configuration. Users may add global `~/.config/pr-monitor/config.json` (or the
+absolute `XDG_CONFIG_HOME` equivalent) and project `.pr-monitor.json`; host project fallbacks are:
 
 - OpenCode: project/worktree `.opencode/pr-monitor.json`;
 - Claude Code: `.claude/pr-monitor.json`, then `.opencode/pr-monitor.json`;
+- Hermes: `.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`;
 - trusted Pi/OMP: `${CONFIG_DIR_NAME}/pr-monitor.json`, then `.opencode/pr-monitor.json`.
 
-Pi must not read project-local configuration before project trust. Package installation must not create a daemon,
+Pi must not read project-local configuration before project trust, but may read user-global config. Package
+installation must not create a daemon,
 persistent watch registry, credential file, copied repository skill, or host-specific core package.
 
 ## Regression Levels

@@ -153,12 +153,16 @@ export function buildReadinessLines({
   readyLabel,
   replyPrefix,
   readinessError,
+  autoMergeEnabled = false,
+  autoMergeNotice,
 }: {
   target: Target
   snapshot: PrSnapshot
   readyLabel: string
   replyPrefix: string
   readinessError?: string
+  autoMergeEnabled?: boolean
+  autoMergeNotice?: string
 }): string[] {
   const ready = hasReadyLabel(snapshot, readyLabel)
   const lines = [
@@ -166,7 +170,14 @@ export function buildReadinessLines({
       ? `- Ready for human review: YES — label "${readyLabel}" is present.`
       : `- Ready for human review: NO — label "${readyLabel}" is absent.`,
   ]
+  if (autoMergeEnabled) {
+    lines.push(
+      "- Auto-merge: ENABLED — automatic readiness and mark_ready make one squash-merge attempt for the " +
+        "accepted head; the squash commit uses only the PR title.",
+    )
+  }
   if (readinessError !== undefined) lines.push(`- Readiness automation failed: ${readinessError}`)
+  if (autoMergeNotice !== undefined) lines.push(`- ${autoMergeNotice}`)
   if (!ready && snapshot.state === "OPEN") {
     const assessment = assessAutomaticReadiness(snapshot)
     if (assessment.blockers.length > 0) {
@@ -191,6 +202,8 @@ export function buildReport(
     readyLabel?: string
     replyPrefix?: string
     readinessError?: string
+    autoMergeEnabled?: boolean
+    autoMergeNotice?: string
   },
 ): string {
   const stateSuffix = snapshot.state !== "OPEN" ? ` — ${snapshot.state}` : ""
@@ -216,6 +229,8 @@ export function buildReport(
       readyLabel,
       replyPrefix,
       readinessError: opts.readinessError,
+      autoMergeEnabled: opts.autoMergeEnabled,
+      autoMergeNotice: opts.autoMergeNotice,
     }),
   ]
   if (snapshot.labels.length > 0) lines.push(`- Labels: ${snapshot.labels.join(", ")}`)

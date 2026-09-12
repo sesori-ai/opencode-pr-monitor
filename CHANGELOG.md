@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acknowledged report failures, lifecycle cleanup, and packaged adapter tests. Standalone label actions work on
   all Hermes hosts. Desktop uses a guarded compatibility adapter; CLI, messaging gateways, ACP and isolated
   Desktop turns reject background monitoring because their native APIs cannot bind reports to the original conversation.
+- Opt-in auto-merge across all hosts. `autoMerge` layers from user-global
+  `~/.config/pr-monitor/config.json` through trusted project config, with an explicit
+  `SESORI_PR_MONITOR_AUTO_MERGE` environment value taking final precedence. Automatic readiness and `mark_ready`
+  retain the ready label, then make one head-fenced squash merge whose commit uses only the PR title. Successful
+  merges receive a dynamically created `automatically-merged` label; rejected or unknown outcomes keep readiness
+  and are not retried automatically. Lost, 5xx, or malformed merge responses are reconciled against the accepted
+  head, while preserved GitHub 4xx metadata keeps definitive rejection reasons intact.
+  With this mode enabled, startup clears a pre-existing ready label behind the lifecycle cleanup barrier. Standalone
+  readiness withdrawal is attempted if its accepted head changes before GitHub confirms the merge; cleanup failure
+  is surfaced without falsely reporting the label absent.
+- User-global monitor config now supplies all settings beneath project-specific overrides; an absolute
+  `XDG_CONFIG_HOME` changes its root when set.
 
 ### Changed
 

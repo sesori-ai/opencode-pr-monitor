@@ -33,8 +33,15 @@ with `skill_view(name="pr-monitor:monitor-pr")`. Agents end their turn while the
 Monitors live in one Node worker per conversation. Finalizing/resetting the conversation, unloading the plugin,
 quitting the host, or a worker failure stops its monitors. Ordinary turn completion does not stop them.
 Resume after a host restart and explicitly restart missing watches. No detached daemon survives the host.
-Configuration is captured from the conversation's working directory: `.pr-monitor.json`, then
-`.hermes/pr-monitor.json`, then `.opencode/pr-monitor.json`.
+Global `~/.config/pr-monitor/config.json` supplies defaults. Project configuration is captured from the
+conversation's working directory: `.pr-monitor.json`, then `.hermes/pr-monitor.json`, then
+`.opencode/pr-monitor.json`.
+
+Set `autoMerge: true` in global `~/.config/pr-monitor/config.json` or trusted project config to make automatic
+readiness and `mark_ready` perform one head-fenced, title-only squash merge. Project config overrides global config;
+an explicit `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides both. With auto-merge enabled, startup
+removes any pre-existing ready label and requires fresh assessment. Successful merges get a dynamically created
+`automatically-merged` label. See the root README for failure behavior and setup details.
 
 ## Compatibility boundary
 

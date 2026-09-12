@@ -1,7 +1,7 @@
 // GitHub CLI runner for Node-based adapters.
 
 import { execFile } from "node:child_process"
-import { PollError, type GhRunner } from "../core/github"
+import { ghHttpStatus, PollError, type GhRunner } from "../core/github"
 
 export function createNodeGhRunner(): GhRunner {
   return (args) =>
@@ -11,7 +11,10 @@ export function createNodeGhRunner(): GhRunner {
           const message = stderr.trim() || error.message
           const notFound =
             /could not resolve to|not found|404/i.test(message) && !/could not resolve host/i.test(message)
-          reject(new PollError(message, { notFound }))
+          const exitCode = typeof error.code === "number" || typeof error.code === "string"
+            ? error.code
+            : undefined
+          reject(new PollError(message, { notFound, httpStatus: ghHttpStatus({ message }), exitCode }))
           return
         }
         resolve(stdout)

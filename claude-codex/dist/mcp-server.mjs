@@ -7201,7 +7201,7 @@ var require_dist = __commonJS({
 
 // claude-codex/src/mcp-server.ts
 import { readFileSync as readFileSync2 } from "node:fs";
-import { isAbsolute, join as join3 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join4 } from "node:path";
 import process5 from "node:process";
 
 // node_modules/zod/v3/helpers/util.js
@@ -7576,15 +7576,15 @@ var makeIssue = (params) => {
       message: issueData.message
     };
   }
-  let errorMessage = "";
+  let errorMessage2 = "";
   const maps = errorMaps.filter((m) => !!m).slice().reverse();
   for (const map2 of maps) {
-    errorMessage = map2(fullIssue, { data, defaultError: errorMessage }).message;
+    errorMessage2 = map2(fullIssue, { data, defaultError: errorMessage2 }).message;
   }
   return {
     ...issueData,
     path: fullPath,
-    message: errorMessage
+    message: errorMessage2
   };
 };
 function addIssueToContext(ctx, issueData) {
@@ -27376,19 +27376,19 @@ var getRefs = (options) => {
 };
 
 // node_modules/zod-to-json-schema/dist/esm/errorMessages.js
-function addErrorMessage(res, key, errorMessage, refs) {
+function addErrorMessage(res, key, errorMessage2, refs) {
   if (!refs?.errorMessages)
     return;
-  if (errorMessage) {
+  if (errorMessage2) {
     res.errorMessage = {
       ...res.errorMessage,
-      [key]: errorMessage
+      [key]: errorMessage2
     };
   }
 }
-function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
+function setResponseValueAndErrors(res, key, value, errorMessage2, refs) {
   res[key] = value;
-  addErrorMessage(res, key, errorMessage, refs);
+  addErrorMessage(res, key, errorMessage2, refs);
 }
 
 // node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
@@ -28699,8 +28699,8 @@ var Protocol = class {
                   if (queuedMessage.type === "response") {
                     resolver(message);
                   } else {
-                    const errorMessage = message;
-                    const error51 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                    const errorMessage2 = message;
+                    const error51 = new McpError(errorMessage2.error.code, errorMessage2.error.message, errorMessage2.error.data);
                     resolver(error51);
                   }
                 } else {
@@ -30000,23 +30000,23 @@ var Server = class extends Protocol {
       const wrappedHandler = async (request, extra) => {
         const validatedRequest = safeParse2(CallToolRequestSchema, request);
         if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+          const errorMessage2 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage2}`);
         }
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+            const errorMessage2 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage2}`);
           }
           return taskValidationResult.data;
         }
         const validationResult = safeParse2(CallToolResultSchema, result);
         if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+          const errorMessage2 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage2}`);
         }
         return validationResult.data;
       };
@@ -30510,12 +30510,12 @@ var McpServer = class {
    * @param errorMessage - The error message.
    * @returns The tool error result.
    */
-  createToolError(errorMessage) {
+  createToolError(errorMessage2) {
     return {
       content: [
         {
           type: "text",
-          text: errorMessage
+          text: errorMessage2
         }
       ],
       isError: true
@@ -30533,8 +30533,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(schemaToParse, args);
     if (!parseResult.success) {
       const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error51);
-      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage}`);
+      const errorMessage2 = getParseErrorMessage(error51);
+      throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage2}`);
     }
     return parseResult.data;
   }
@@ -30558,8 +30558,8 @@ var McpServer = class {
     const parseResult = await safeParseAsync2(outputObj, result.structuredContent);
     if (!parseResult.success) {
       const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error51);
-      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage}`);
+      const errorMessage2 = getParseErrorMessage(error51);
+      throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage2}`);
     }
   }
   /**
@@ -30771,8 +30771,8 @@ var McpServer = class {
         const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
         if (!parseResult.success) {
           const error51 = "error" in parseResult ? parseResult.error : "Unknown error";
-          const errorMessage = getParseErrorMessage(error51);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage}`);
+          const errorMessage2 = getParseErrorMessage(error51);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage2}`);
         }
         const args = parseResult.data;
         const cb = prompt.callback;
@@ -31269,6 +31269,9 @@ var StdioServerTransport = class {
 
 // core/config.ts
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
+var AUTO_MERGE_ENV = "SESORI_PR_MONITOR_AUTO_MERGE";
 var DEFAULT_MONITOR_CONFIG = {
   debounceMinutes: 2,
   maxCiWaitMinutes: 30,
@@ -31276,7 +31279,8 @@ var DEFAULT_MONITOR_CONFIG = {
   ignoreCommentTag: "<!-- pr-monitor:reply -->",
   announceOnStart: true,
   flushOnCiFailure: true,
-  readyLabel: "ready-for-human-review"
+  readyLabel: "ready-for-human-review",
+  autoMerge: false
 };
 var DEFAULT_CLAUDE_CONFIG = {
   desktopNotifications: false,
@@ -31285,13 +31289,31 @@ var DEFAULT_CLAUDE_CONFIG = {
 };
 var MIN_POLL_INTERVAL_SECONDS = 30;
 var MAX_POLL_INTERVAL_SECONDS = 86400;
+function globalMonitorConfigPath({
+  environment = process.env,
+  homeDirectory
+} = {}) {
+  const xdgConfigHome = environment["XDG_CONFIG_HOME"]?.trim();
+  const environmentHome = environment["HOME"]?.trim() || environment["USERPROFILE"]?.trim();
+  const home = homeDirectory ?? environmentHome ?? homedir();
+  const configHome = xdgConfigHome !== void 0 && isAbsolute(xdgConfigHome) ? xdgConfigHome : join(home, ".config");
+  return join(configHome, "pr-monitor", "config.json");
+}
 function positiveNumber(record2, key) {
   const value = record2[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
 }
-function resolveMonitorConfig(raw) {
-  const config2 = { ...DEFAULT_MONITOR_CONFIG };
-  if (typeof raw !== "object" || raw === null) return config2;
+function environmentAutoMergeOverride(environment, log2) {
+  const raw = environment[AUTO_MERGE_ENV];
+  if (raw === void 0) return void 0;
+  const value = raw.trim().toLowerCase();
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0" || value === "") return false;
+  log2(`${AUTO_MERGE_ENV} must be true, false, 1, or 0; auto-merge is disabled.`);
+  return false;
+}
+function applyMonitorConfig(config2, raw) {
+  if (typeof raw !== "object" || raw === null) return;
   const record2 = raw;
   config2.debounceMinutes = positiveNumber(record2, "debounceMinutes") ?? config2.debounceMinutes;
   config2.maxCiWaitMinutes = positiveNumber(record2, "maxCiWaitMinutes") ?? config2.maxCiWaitMinutes;
@@ -31305,20 +31327,33 @@ function resolveMonitorConfig(raw) {
   if (typeof flushOnCiFailure === "boolean") config2.flushOnCiFailure = flushOnCiFailure;
   const label = record2["readyLabel"];
   if (typeof label === "string" && label.length > 0) config2.readyLabel = label;
+  const autoMerge = record2["autoMerge"];
+  if (typeof autoMerge === "boolean") config2.autoMerge = autoMerge;
+}
+function resolveMonitorConfig(layers, environment, log2) {
+  const config2 = { ...DEFAULT_MONITOR_CONFIG };
+  for (const raw of layers) applyMonitorConfig(config2, raw);
+  config2.autoMerge = environmentAutoMergeOverride(environment, log2) ?? config2.autoMerge;
   return config2;
 }
-function resolveClaudeConfig(raw) {
-  const config2 = { ...resolveMonitorConfig(raw), ...DEFAULT_CLAUDE_CONFIG };
-  if (typeof raw !== "object" || raw === null) return config2;
+function applyClaudeConfig(config2, raw) {
+  if (typeof raw !== "object" || raw === null) return;
   const record2 = raw;
   const notify = record2["desktopNotifications"];
   if (typeof notify === "boolean") config2.desktopNotifications = notify;
   const keepAlive = record2["keepAlive"];
   if (typeof keepAlive === "boolean") config2.keepAlive = keepAlive;
   config2.keepAliveMaxMinutes = positiveNumber(record2, "keepAliveMaxMinutes") ?? config2.keepAliveMaxMinutes;
+}
+function resolveClaudeConfig(layers, environment, log2) {
+  const config2 = { ...resolveMonitorConfig(layers, environment, log2), ...DEFAULT_CLAUDE_CONFIG };
+  for (const raw of layers) applyClaudeConfig(config2, raw);
   return config2;
 }
-async function loadResolvedConfig({ paths, log: log2, resolve }) {
+async function readFirstConfig({
+  paths,
+  log: log2
+}) {
   for (const path of paths) {
     let text;
     try {
@@ -31327,12 +31362,29 @@ async function loadResolvedConfig({ paths, log: log2, resolve }) {
       continue;
     }
     try {
-      return resolve(JSON.parse(text));
+      return { found: true, raw: JSON.parse(text) };
     } catch (error51) {
       log2(`config file ${path} is not valid JSON, ignoring it: ${error51.message}`);
     }
   }
-  return resolve(void 0);
+  return { found: false };
+}
+async function loadResolvedConfig({
+  paths,
+  globalPaths,
+  log: log2,
+  environment = process.env,
+  resolve
+}) {
+  const global = await readFirstConfig({
+    paths: globalPaths ?? [globalMonitorConfigPath({ environment })],
+    log: log2
+  });
+  const project = await readFirstConfig({ paths, log: log2 });
+  const layers = [];
+  if (global.found) layers.push(global.raw);
+  if (project.found) layers.push(project.raw);
+  return resolve(layers, environment, log2);
 }
 function loadClaudeConfig(input) {
   return loadResolvedConfig({ ...input, resolve: resolveClaudeConfig });
@@ -31364,11 +31416,21 @@ function targetUrl(target) {
 // core/github.ts
 var PollError = class extends Error {
   notFound;
+  httpStatus;
+  exitCode;
   constructor(message, opts) {
     super(message);
     this.notFound = opts?.notFound ?? false;
+    this.httpStatus = opts?.httpStatus;
+    this.exitCode = opts?.exitCode;
   }
 };
+function ghHttpStatus({ message }) {
+  const match = /\bHTTP\s+(\d{3})\b/i.exec(message);
+  if (match === null) return void 0;
+  const status = Number(match[1]);
+  return Number.isInteger(status) ? status : void 0;
+}
 var PR_QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -31681,10 +31743,14 @@ function ciPhase(snapshot) {
 // core/label.ts
 var READY_LABEL_COLOR = "0e8a16";
 var READY_LABEL_DESCRIPTION = "This PR is ready for human review";
-async function assertOpenPullRequest(runGh2, repo, number4) {
+async function getOpenPullRequest({
+  runGh: runGh2,
+  target
+}) {
+  const repo = `repos/${target.owner}/${target.repo}`;
   let raw;
   try {
-    raw = await runGh2(["api", `${repo}/pulls/${number4}`]);
+    raw = await runGh2(["api", `${repo}/pulls/${target.number}`]);
   } catch (error51) {
     if (error51 instanceof PollError && error51.notFound) {
       throw new Error(`it is not a pull request, or it does not exist or is not accessible.`);
@@ -31695,10 +31761,14 @@ async function assertOpenPullRequest(runGh2, repo, number4) {
   if (pr.merged === true || pr.state !== "open") {
     throw new Error(`the PR is already ${pr.merged === true ? "MERGED" : "CLOSED"}.`);
   }
+  return {
+    title: typeof pr.title === "string" ? pr.title : void 0,
+    headSha: typeof pr.head?.sha === "string" ? pr.head.sha : void 0
+  };
 }
 async function markReadyForHumanReview(runGh2, target, label) {
   const repo = `repos/${target.owner}/${target.repo}`;
-  await assertOpenPullRequest(runGh2, repo, target.number);
+  await getOpenPullRequest({ runGh: runGh2, target });
   try {
     await runGh2([
       "api",
@@ -31717,7 +31787,7 @@ async function markReadyForHumanReview(runGh2, target, label) {
 }
 async function removeReadyForHumanReview(runGh2, target, label) {
   const repo = `repos/${target.owner}/${target.repo}`;
-  await assertOpenPullRequest(runGh2, repo, target.number);
+  await getOpenPullRequest({ runGh: runGh2, target });
   try {
     await runGh2(["api", "--method", "DELETE", `${repo}/issues/${target.number}/labels/${encodeURIComponent(label)}`]);
   } catch (error51) {
@@ -31727,6 +31797,173 @@ async function removeReadyForHumanReview(runGh2, target, label) {
     throw error51;
   }
   return `Removed the "${label}" label from ${targetKey(target)}: it is no longer flagged for human review.`;
+}
+
+// core/merge.ts
+var AUTO_MERGED_LABEL = "automatically-merged";
+var AUTO_MERGED_LABEL_COLOR = "1d76db";
+var AUTO_MERGED_LABEL_DESCRIPTION = "Merged automatically by Sesori PR Monitor";
+var AutoMergeHeadChangedError = class extends Error {
+  expectedHeadSha;
+  actualHeadSha;
+  constructor({ expectedHeadSha, actualHeadSha }) {
+    super(
+      actualHeadSha === void 0 ? `GitHub rejected the accepted head ${expectedHeadSha} with HTTP 409 before confirming the merge` : `the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`
+    );
+    this.name = "AutoMergeHeadChangedError";
+    this.expectedHeadSha = expectedHeadSha;
+    this.actualHeadSha = actualHeadSha;
+  }
+};
+var AutoMergeOutcomeUnknownError = class extends Error {
+  constructor({ message }) {
+    super(message);
+    this.name = "AutoMergeOutcomeUnknownError";
+  }
+};
+function errorMessage(error51) {
+  return error51 instanceof Error ? error51.message : String(error51);
+}
+function isDefinitiveHttpRejection(error51) {
+  if (!(error51 instanceof PollError) || error51.httpStatus === void 0) return false;
+  return error51.httpStatus >= 400 && error51.httpStatus < 500 && error51.httpStatus !== 408;
+}
+function autoMergeFailureText({ error: error51 }) {
+  if (error51 instanceof AutoMergeOutcomeUnknownError) {
+    return `Auto-merge outcome is unknown after the ready label was added; the ready label remains and no automatic retry will occur: ${error51.message}`;
+  }
+  if (error51 instanceof AutoMergeHeadChangedError) {
+    return `Auto-merge was canceled because the accepted head changed; the monitor will reassess readiness on its next poll: ${error51.message}`;
+  }
+  return "Auto-merge failed after the ready label was added; the ready label remains and no automatic retry will occur: " + errorMessage(error51);
+}
+async function getAutoMergePullRequest({
+  runGh: runGh2,
+  target
+}) {
+  const pullRequest = await getOpenPullRequest({ runGh: runGh2, target });
+  if (pullRequest.title === void 0 || pullRequest.title.length === 0 || pullRequest.headSha === void 0 || pullRequest.headSha.length === 0) {
+    throw new Error("GitHub's pull-request response did not include the title and head SHA required for auto-merge.");
+  }
+  return { title: pullRequest.title, headSha: pullRequest.headSha };
+}
+async function getPullRequestMergeState({
+  runGh: runGh2,
+  target
+}) {
+  const repo = `repos/${target.owner}/${target.repo}`;
+  const raw = await runGh2(["api", `${repo}/pulls/${target.number}`]);
+  const pullRequest = JSON.parse(raw);
+  const merged = pullRequest.merged === true;
+  const state = merged ? "MERGED" : pullRequest.state === "open" ? "OPEN" : pullRequest.state === "closed" ? "CLOSED" : "UNKNOWN";
+  return {
+    state,
+    headSha: typeof pullRequest.head?.sha === "string" ? pullRequest.head.sha : void 0
+  };
+}
+async function addAutoMergedLabel({ runGh: runGh2, target }) {
+  const repo = `repos/${target.owner}/${target.repo}`;
+  try {
+    await runGh2([
+      "api",
+      `${repo}/labels`,
+      "-f",
+      `name=${AUTO_MERGED_LABEL}`,
+      "-f",
+      `color=${AUTO_MERGED_LABEL_COLOR}`,
+      "-f",
+      `description=${AUTO_MERGED_LABEL_DESCRIPTION}`
+    ]);
+  } catch {
+  }
+  await runGh2(["api", `${repo}/issues/${target.number}/labels`, "-f", `labels[]=${AUTO_MERGED_LABEL}`]);
+}
+async function successfulMergeText({
+  runGh: runGh2,
+  target,
+  pullRequest
+}) {
+  const merged = `Auto-merge succeeded: squash-merged ${targetKey(target)} at ${pullRequest.headSha} using only the PR title.`;
+  try {
+    await addAutoMergedLabel({ runGh: runGh2, target });
+    return `${merged} Label "${AUTO_MERGED_LABEL}" added.`;
+  } catch (error51) {
+    return `${merged} Warning: could not add label "${AUTO_MERGED_LABEL}": ${errorMessage(error51)}`;
+  }
+}
+async function reconcileIndeterminateMerge({
+  runGh: runGh2,
+  target,
+  pullRequest,
+  cause
+}) {
+  let observed;
+  try {
+    observed = await getPullRequestMergeState({ runGh: runGh2, target });
+  } catch (reconciliationError) {
+    throw new AutoMergeOutcomeUnknownError({
+      message: `the merge request did not return a usable result (${errorMessage(cause)}), and the follow-up PR query failed (${errorMessage(reconciliationError)})`
+    });
+  }
+  if (observed.state === "MERGED" && observed.headSha === pullRequest.headSha) {
+    return await successfulMergeText({ runGh: runGh2, target, pullRequest });
+  }
+  if (observed.state === "OPEN" && observed.headSha !== void 0 && observed.headSha !== pullRequest.headSha) {
+    throw new AutoMergeHeadChangedError({
+      expectedHeadSha: pullRequest.headSha,
+      actualHeadSha: observed.headSha
+    });
+  }
+  const observedHead = observed.headSha === void 0 ? "unknown head" : `head ${observed.headSha}`;
+  throw new AutoMergeOutcomeUnknownError({
+    message: `the merge request did not return a usable result (${errorMessage(cause)}); the follow-up PR query observed ${observed.state} at ${observedHead}, so the accepted head could not be confirmed as merged`
+  });
+}
+async function squashMergePullRequest({
+  runGh: runGh2,
+  target,
+  pullRequest
+}) {
+  if (pullRequest.title.length === 0 || pullRequest.headSha.length === 0) {
+    throw new Error("Auto-merge requires a non-empty PR title and head SHA.");
+  }
+  const repo = `repos/${target.owner}/${target.repo}`;
+  let raw;
+  try {
+    raw = await runGh2([
+      "api",
+      "--method",
+      "PUT",
+      `${repo}/pulls/${target.number}/merge`,
+      "-f",
+      "merge_method=squash",
+      "-f",
+      `sha=${pullRequest.headSha}`,
+      "-f",
+      `commit_title=${pullRequest.title}`,
+      "-f",
+      "commit_message="
+    ]);
+  } catch (error51) {
+    if (isDefinitiveHttpRejection(error51)) {
+      if (error51.httpStatus === 409) {
+        throw new AutoMergeHeadChangedError({ expectedHeadSha: pullRequest.headSha });
+      }
+      throw error51;
+    }
+    return await reconcileIndeterminateMerge({ runGh: runGh2, target, pullRequest, cause: error51 });
+  }
+  let result;
+  try {
+    result = JSON.parse(raw);
+  } catch (error51) {
+    return await reconcileIndeterminateMerge({ runGh: runGh2, target, pullRequest, cause: error51 });
+  }
+  if (result.merged !== true) {
+    const detail = typeof result.message === "string" && result.message.length > 0 ? result.message : "GitHub did not confirm the merge.";
+    throw new Error(detail);
+  }
+  return await successfulMergeText({ runGh: runGh2, target, pullRequest });
 }
 
 // core/activity.ts
@@ -31993,13 +32230,21 @@ function buildReadinessLines({
   snapshot,
   readyLabel,
   replyPrefix,
-  readinessError
+  readinessError,
+  autoMergeEnabled = false,
+  autoMergeNotice
 }) {
   const ready = hasReadyLabel(snapshot, readyLabel);
   const lines = [
     ready ? `- Ready for human review: YES \u2014 label "${readyLabel}" is present.` : `- Ready for human review: NO \u2014 label "${readyLabel}" is absent.`
   ];
+  if (autoMergeEnabled) {
+    lines.push(
+      "- Auto-merge: ENABLED \u2014 automatic readiness and mark_ready make one squash-merge attempt for the accepted head; the squash commit uses only the PR title."
+    );
+  }
   if (readinessError !== void 0) lines.push(`- Readiness automation failed: ${readinessError}`);
+  if (autoMergeNotice !== void 0) lines.push(`- ${autoMergeNotice}`);
   if (!ready && snapshot.state === "OPEN") {
     const assessment = assessAutomaticReadiness(snapshot);
     if (assessment.blockers.length > 0) {
@@ -32031,7 +32276,9 @@ function buildReport(target, snapshot, opts) {
       snapshot,
       readyLabel,
       replyPrefix,
-      readinessError: opts.readinessError
+      readinessError: opts.readinessError,
+      autoMergeEnabled: opts.autoMergeEnabled,
+      autoMergeNotice: opts.autoMergeNotice
     })
   ];
   if (snapshot.labels.length > 0) lines.push(`- Labels: ${snapshot.labels.join(", ")}`);
@@ -32073,13 +32320,19 @@ var PrWatch = class {
   snapshotAt;
   stopped = false;
   stopCleanup;
-  // Only GitHub label mutation must drain before a successor can own this PR.
-  // Fetches and deliveries are fenced by `stopped` but must not block teardown.
+  // An already-started GitHub readiness mutation must drain before a successor
+  // can own this PR. This includes an auto-merge already in flight; stopping
+  // after label completion fences a follow-on merge that has not started yet.
+  // Fetches and deliveries are fenced by `stopped` but do not block teardown.
   readinessMutation;
   readinessRetry;
   readinessRetryBaseline;
   readinessError;
   reportedReadinessError;
+  // One-shot result from an automatic readiness-triggered merge attempt. It is
+  // retained across delivery failure, then cleared by delivery or a superseding
+  // manual readiness action.
+  autoMergeNotice;
   // A poll may observe new feedback and a prefixed response together. The
   // ready label is still withdrawn and reported first; only a later quiet
   // report can restore it, so the feedback never disappears behind one poll.
@@ -32111,7 +32364,8 @@ var PrWatch = class {
     const failures = this.consecutiveFailures > 0 ? `, ${this.consecutiveFailures} consecutive poll failures` : "";
     const readiness = this.deps.readiness;
     const ready = readiness !== void 0 && this.snapshot !== void 0 ? `, ready for human review: ${hasReadyLabel(this.snapshot, readiness.label) ? "yes" : "no"}` : "";
-    return `${targetKey(this.target)} \u2014 ${phase}, ${this.dirty ? "activity buffered" : "quiet"}, baseline ${baselineAge}m ago${failures}${ready}`;
+    const autoMerge = this.deps.autoMerge === void 0 ? "" : ", auto-merge: squash";
+    return `${targetKey(this.target)} \u2014 ${phase}, ${this.dirty ? "activity buffered" : "quiet"}, baseline ${baselineAge}m ago${failures}${ready}${autoMerge}`;
   }
   runExclusive(task) {
     this.pendingOps += 1;
@@ -32155,14 +32409,19 @@ var PrWatch = class {
       if (readiness === void 0 || snapshot === void 0) {
         throw new Error("this watch does not have a readiness channel");
       }
+      this.autoMergeNotice = void 0;
       return await this.trackReadinessMutation(async () => {
-        const text = await readiness.change(ready);
+        let text = await readiness.change(ready);
         this.snapshot = withReadyLabel(snapshot, readiness.label, ready);
         if (!this.stopped) {
           this.clearReadinessFailure();
           this.autoReadyAfterInvalidation = false;
           this.notifyReadyChanged(ready);
-          if (!ready && assessAutomaticReadiness(this.snapshot).eligible) {
+          if (ready) {
+            const autoMerge = await this.attemptAutoMerge({ snapshot: this.snapshot, report: false });
+            if (autoMerge !== void 0) text += `
+${autoMerge}`;
+          } else if (assessAutomaticReadiness(this.snapshot).eligible) {
             this.dirty = true;
             this.lastActivityAt = this.deps.now();
             this.holdStartedAt = void 0;
@@ -32397,7 +32656,9 @@ var PrWatch = class {
         snapshot,
         readyLabel: readiness.label,
         replyPrefix: readiness.replyPrefix,
-        readinessError: this.readinessError
+        readinessError: this.readinessError,
+        autoMergeEnabled: this.deps.autoMerge !== void 0,
+        autoMergeNotice: this.autoMergeNotice
       })
     ].join("\n");
   }
@@ -32503,6 +32764,7 @@ var PrWatch = class {
         if (this.stopped) return changed;
         this.clearReadinessFailure();
         this.notifyReadyChanged(ready);
+        if (ready) await this.attemptAutoMerge({ snapshot: changed, report: true });
         return changed;
       } catch (error51) {
         this.snapshot = snapshot;
@@ -32522,6 +32784,24 @@ var PrWatch = class {
       }
     });
   }
+  async attemptAutoMerge({
+    snapshot,
+    report
+  }) {
+    const autoMerge = this.deps.autoMerge;
+    if (autoMerge === void 0) return void 0;
+    let notice;
+    try {
+      notice = await autoMerge.squashMerge({
+        pullRequest: { title: snapshot.title, headSha: snapshot.headSha }
+      });
+    } catch (error51) {
+      notice = autoMergeFailureText({ error: error51 });
+      this.deps.log(`auto-merge failed for ${targetKey(this.target)}: ${error51}`);
+    }
+    if (report) this.autoMergeNotice = notice;
+    return notice;
+  }
   clearReadinessFailure() {
     this.readinessRetry = void 0;
     this.readinessRetryBaseline = void 0;
@@ -32537,6 +32817,7 @@ var PrWatch = class {
   }
   afterReportDelivered() {
     this.reportedReadinessError = this.readinessError;
+    this.autoMergeNotice = void 0;
     if (!this.autoReadyAfterInvalidation) return;
     this.autoReadyAfterInvalidation = false;
     const snapshot = this.snapshot;
@@ -32583,10 +32864,14 @@ var PrWatch = class {
       forcedHoldMinutes,
       readyLabel: readiness?.label,
       replyPrefix: readiness?.replyPrefix,
-      readinessError: this.readinessError
+      readinessError: this.readinessError,
+      autoMergeEnabled: this.deps.autoMerge !== void 0,
+      autoMergeNotice: this.autoMergeNotice
     });
     if (!this.initialAnnouncementPending || this.snapshot?.state !== "OPEN") return report;
-    return report + "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, and existing feedback now. If already settled with nothing left to do, call mark_ready without waiting for a new event. Empty results after creation or a fresh push do not prove readiness; PR age alone is insufficient.";
+    const startupNotice = this.deps.startupNotice === void 0 ? "" : `
+- Startup safety reset: ${this.deps.startupNotice}`;
+    return report + startupNotice + "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, and existing feedback now. If already settled with nothing left to do, call mark_ready without waiting for a new event. Empty results after creation or a fresh push do not prove readiness; PR age alone is insufficient.";
   }
   flush(forcedHoldMinutes) {
     const snapshot = this.snapshot;
@@ -32623,13 +32908,16 @@ function buildMonitorToolDescription({
   lifecycle,
   waiting
 }) {
-  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports observe the existing label; assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Tuning lives in ${configPath}. ${lifecycle}`;
+  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when autoMerge is enabled by trusted config or SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; rejected or unknown outcomes keep readiness and are not retried automatically, while a changed head cancels standalone readiness. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE environment value overrides autoMerge config. ${lifecycle}`;
 }
 
 // runtime/monitor-session.ts
 var MonitorSession = class {
   deps;
   watches = /* @__PURE__ */ new Map();
+  // Destructive startup work happens before a watch can own the target. Keep
+  // it in the session cleanup barrier so a reloaded successor cannot race it.
+  startupMutations = /* @__PURE__ */ new Set();
   lifecycleGeneration = 0;
   selfLogin;
   selfLoginPromise;
@@ -32642,6 +32930,16 @@ var MonitorSession = class {
         clearInterval(timer);
       })
     };
+  }
+  trackStartupMutation({ mutation }) {
+    const operation = Promise.resolve().then(mutation);
+    const barrier = operation.then(
+      () => void 0,
+      () => void 0
+    );
+    this.startupMutations.add(barrier);
+    void barrier.then(() => this.startupMutations.delete(barrier));
+    return operation;
   }
   list() {
     return [...this.watches.values()].map(({ watch, config: config2 }) => ({
@@ -32690,8 +32988,12 @@ var MonitorSession = class {
   }) {
     this.lifecycleGeneration += 1;
     const entries = [...this.watches.values()];
+    const startupMutations = [...this.startupMutations];
     for (const entry of entries) entry.watch.stop();
-    await Promise.all(entries.map((entry) => entry.watch.waitUntilStopped()));
+    await Promise.all([
+      ...entries.map((entry) => entry.watch.waitUntilStopped()),
+      ...startupMutations
+    ]);
     if (notice === void 0) return;
     await Promise.all(
       entries.map(async (entry) => {
@@ -32754,6 +33056,30 @@ ${existing.watch.statusLine()}` };
     const raced = this.watches.get(key);
     if (raced) return { text: `Already monitoring ${displayKey} in this session.
 ${raced.watch.statusLine()}` };
+    let startupNotice;
+    if (config2.autoMerge && hasReadyLabel(initial, config2.readyLabel)) {
+      try {
+        await this.trackStartupMutation({
+          mutation: () => removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel)
+        });
+      } catch (error51) {
+        return {
+          text: `Cannot start monitor for ${displayKey}: auto-merge is enabled but the pre-existing ready label "${config2.readyLabel}" could not be removed (${error51.message}).`
+        };
+      }
+      initial = withReadyLabel(initial, config2.readyLabel, false);
+      startupNotice = `pre-existing ready label "${config2.readyLabel}" was removed because auto-merge is enabled. Reassess the current head and call mark_ready if it is ready; that action will try to squash-merge it.`;
+      if (this.lifecycleGeneration !== lifecycleGeneration) {
+        return {
+          text: `Monitor session ended while ${displayKey} was starting. ${startupNotice} No active monitor remains.`
+        };
+      }
+      const resetRace = this.watches.get(key);
+      if (resetRace) {
+        return { text: `Already monitoring ${displayKey} in this session.
+${resetRace.watch.statusLine()}` };
+      }
+    }
     const reportChannel = options.createChannel({ target, config: config2 });
     let timer;
     const watch = new PrWatch({
@@ -32779,7 +33105,15 @@ ${raced.watch.statusLine()}` };
           replyPrefix: config2.ignoreCommentTag ?? "<!-- pr-monitor:reply -->",
           change: (ready) => ready ? markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel),
           onChanged: (ready) => this.notifyReadyChanged({ target, ready, watched: true, config: config2 })
-        }
+        },
+        autoMerge: config2.autoMerge ? {
+          squashMerge: ({ pullRequest }) => squashMergePullRequest({
+            runGh: this.deps.runGh,
+            target,
+            pullRequest
+          })
+        } : void 0,
+        startupNotice
       }
     });
     timer = this.deps.schedule({
@@ -32807,8 +33141,10 @@ ${raced.watch.statusLine()}` };
       void watch.initializeReadiness();
     }
     this.deps.log(`started monitoring ${displayKey}`);
+    const autoMergeNotice = config2.autoMerge ? " Auto-merge enabled: automatic readiness and mark_ready make one squash-merge attempt for the accepted head using only the PR title." : "";
+    const resetNotice = startupNotice === void 0 ? "" : ` Startup safety reset: ${startupNotice}`;
     return {
-      text: `Started monitoring ${displayKey} \u2014 "${initial.title}".`,
+      text: `Started monitoring ${displayKey} \u2014 "${initial.title}".${autoMergeNotice}${resetNotice}`,
       start: { target, config: config2, announcement }
     };
   }
@@ -32872,12 +33208,81 @@ ${raced.watch.statusLine()}` };
         };
       }
       const config2 = await loadConfig();
-      const text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
-      this.notifyReadyChanged({ target, ready, watched: false, config: config2 });
-      return { text, ready: { target, ready, watched: false } };
+      const acceptedPullRequest = ready && config2.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
+      let effectiveReady = ready;
+      let text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config2.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
+      if (acceptedPullRequest !== void 0) {
+        let revalidatedPullRequest;
+        try {
+          revalidatedPullRequest = await getAutoMergePullRequest({ runGh: this.deps.runGh, target });
+        } catch (error51) {
+          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+            target,
+            config: config2,
+            reason: `the accepted head could not be revalidated after labeling (${error51 instanceof Error ? error51.message : String(error51)})`
+          });
+          effectiveReady = !withdrawal.removed;
+          text += `
+${withdrawal.text}`;
+        }
+        if (revalidatedPullRequest !== void 0 && revalidatedPullRequest.headSha !== acceptedPullRequest.headSha) {
+          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+            target,
+            config: config2,
+            reason: `the PR head changed from ${acceptedPullRequest.headSha} to ${revalidatedPullRequest.headSha} while readiness was being applied`
+          });
+          effectiveReady = !withdrawal.removed;
+          text += `
+${withdrawal.text}`;
+        } else if (revalidatedPullRequest !== void 0) {
+          try {
+            text += `
+${await squashMergePullRequest({
+              runGh: this.deps.runGh,
+              target,
+              pullRequest: revalidatedPullRequest
+            })}`;
+          } catch (error51) {
+            if (error51 instanceof AutoMergeHeadChangedError) {
+              const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+                target,
+                config: config2,
+                reason: error51.message
+              });
+              effectiveReady = !withdrawal.removed;
+              text += `
+${withdrawal.text}`;
+            } else {
+              const failure = autoMergeFailureText({ error: error51 });
+              this.deps.log(`auto-merge failed for ${displayKey}: ${error51}`);
+              text += `
+${failure}`;
+            }
+          }
+        }
+      }
+      this.notifyReadyChanged({ target, ready: effectiveReady, watched: false, config: config2 });
+      return { text, ready: { target, ready: effectiveReady, watched: false } };
     } catch (error51) {
       const action = ready ? `mark ${displayKey} as ready for human review` : `withdraw the ready-for-human-review label from ${displayKey}`;
       return { text: `Cannot ${action}: ${error51.message}` };
+    }
+  }
+  async withdrawUnsafeStandaloneReadiness({
+    target,
+    config: config2,
+    reason
+  }) {
+    const canceled = `Auto-merge canceled because ${reason}.`;
+    try {
+      const removed = await removeReadyForHumanReview(this.deps.runGh, target, config2.readyLabel);
+      return { text: `${canceled} ${removed}`, removed: true };
+    } catch (error51) {
+      this.deps.log(`unsafe standalone readiness cleanup failed for ${targetKey(target)}: ${error51}`);
+      return {
+        text: `${canceled} WARNING: label "${config2.readyLabel}" could not be removed (${error51 instanceof Error ? error51.message : String(error51)}); remove it manually before reassessing the PR.`,
+        removed: false
+      };
     }
   }
   fetchSnapshot({ target, config: config2 }) {
@@ -32919,7 +33324,8 @@ function createNodeGhRunner() {
       if (error51) {
         const message = stderr.trim() || error51.message;
         const notFound = /could not resolve to|not found|404/i.test(message) && !/could not resolve host/i.test(message);
-        reject(new PollError(message, { notFound }));
+        const exitCode = typeof error51.code === "number" || typeof error51.code === "string" ? error51.code : void 0;
+        reject(new PollError(message, { notFound, httpStatus: ghHttpStatus({ message }), exitCode }));
         return;
       }
       resolve(stdout);
@@ -32974,18 +33380,18 @@ function pushMessage({ channel, text }) {
 
 // claude-codex/src/session-state.ts
 import { mkdirSync as mkdirSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 
 // claude-codex/src/spool.ts
 import { execFile as execFile2, execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-var SPOOL_ROOT = join(homedir(), ".claude", "pr-monitor", "spool");
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
+var SPOOL_ROOT = join2(homedir2(), ".claude", "pr-monitor", "spool");
 var OWNER_FILE = "owner";
 function spoolDirFor(claudePid2, sessionId) {
-  const root = join(SPOOL_ROOT, String(claudePid2));
-  return sessionId === void 0 ? root : join(root, sessionId);
+  const root = join2(SPOOL_ROOT, String(claudePid2));
+  return sessionId === void 0 ? root : join2(root, sessionId);
 }
 var seq = 0;
 function startToken(pid) {
@@ -33013,7 +33419,7 @@ function claimSpool(claudePid2) {
   if (token === void 0) return;
   let previous;
   try {
-    previous = readFileSync(join(dir, OWNER_FILE), "utf8");
+    previous = readFileSync(join2(dir, OWNER_FILE), "utf8");
   } catch {
   }
   if (previous !== token) {
@@ -33024,9 +33430,9 @@ function claimSpool(claudePid2) {
   }
   try {
     mkdirSync(dir, { recursive: true });
-    const tmp = join(dir, `.${OWNER_FILE}.${process.pid}.tmp`);
+    const tmp = join2(dir, `.${OWNER_FILE}.${process.pid}.tmp`);
     writeFileSync(tmp, token, "utf8");
-    renameSync(tmp, join(dir, OWNER_FILE));
+    renameSync(tmp, join2(dir, OWNER_FILE));
     claimed = { pid: claudePid2, token };
   } catch {
   }
@@ -33043,7 +33449,7 @@ function assertOwned(claudePid2, dir) {
   if (claimed === void 0 || claimed.pid !== claudePid2) return;
   let current;
   try {
-    current = readFileSync(join(dir, OWNER_FILE), "utf8");
+    current = readFileSync(join2(dir, OWNER_FILE), "utf8");
   } catch {
     current = void 0;
   }
@@ -33055,7 +33461,7 @@ function assertOwned(claudePid2, dir) {
 function probeSpool(claudePid2, sessionId) {
   const dir = spoolDirFor(claudePid2, sessionId);
   mkdirSync(dir, { recursive: true });
-  const probe = join(dir, `.probe-${process.pid}`);
+  const probe = join2(dir, `.probe-${process.pid}`);
   writeFileSync(probe, "", "utf8");
   rmSync(probe, { force: true });
 }
@@ -33065,9 +33471,9 @@ function spoolReport(claudePid2, report, sessionId) {
   mkdirSync(dir, { recursive: true });
   seq += 1;
   const name = `${Date.now()}-${process.pid}-${String(seq).padStart(4, "0")}`;
-  const tmp = join(dir, `${name}.tmp`);
+  const tmp = join2(dir, `${name}.tmp`);
   writeFileSync(tmp, report, "utf8");
-  renameSync(tmp, join(dir, `${name}.md`));
+  renameSync(tmp, join2(dir, `${name}.md`));
 }
 function collectDeadSpools(selfClaudePid) {
   let entries;
@@ -33081,7 +33487,7 @@ function collectDeadSpools(selfClaudePid) {
     if (!Number.isInteger(pid) || pid <= 0) continue;
     if (pid === selfClaudePid || isAlive(pid)) continue;
     try {
-      rmSync(join(SPOOL_ROOT, entry), { recursive: true, force: true });
+      rmSync(join2(SPOOL_ROOT, entry), { recursive: true, force: true });
     } catch {
     }
   }
@@ -33109,7 +33515,7 @@ function notifyDesktop(title, body) {
 var SESSION_STATE_FILE = "session.json";
 function writeSessionState(claudePid2, state, sessionId) {
   const dir = spoolDirFor(claudePid2, sessionId);
-  const path = join2(dir, SESSION_STATE_FILE);
+  const path = join3(dir, SESSION_STATE_FILE);
   if (!ownsSpool(claudePid2)) return;
   try {
     mkdirSync2(dir, { recursive: true });
@@ -33129,9 +33535,9 @@ var log = (message) => console.error(`[pr-monitor] ${message}`);
 var runGh = createNodeGhRunner();
 var createAdapter = ({ sessionId, projectDir }) => {
   const configPaths = [
-    join3(projectDir, ".pr-monitor.json"),
-    join3(projectDir, isCodex ? ".codex" : ".claude", "pr-monitor.json"),
-    join3(projectDir, ".opencode", "pr-monitor.json")
+    join4(projectDir, ".pr-monitor.json"),
+    join4(projectDir, isCodex ? ".codex" : ".claude", "pr-monitor.json"),
+    join4(projectDir, ".opencode", "pr-monitor.json")
   ];
   const handedOff = /* @__PURE__ */ new Set();
   let keepAliveUntilMs = 0;
@@ -33272,7 +33678,7 @@ var adapterFor = (meta3) => {
   if (existing !== void 0) return existing;
   let projectDir;
   try {
-    const context = JSON.parse(readFileSync2(join3(SPOOL_ROOT, "codex-contexts", `${sessionId}.json`), "utf8"));
+    const context = JSON.parse(readFileSync2(join4(SPOOL_ROOT, "codex-contexts", `${sessionId}.json`), "utf8"));
     const token = startToken(claudePid);
     const registeredHere = Array.isArray(context.owners) && context.owners.some(
       (owner) => owner?.pid === claudePid && owner.token === token
@@ -33280,7 +33686,7 @@ var adapterFor = (meta3) => {
     if (registeredHere) projectDir = context.cwd;
   } catch {
   }
-  if (typeof projectDir !== "string" || !isAbsolute(projectDir)) {
+  if (typeof projectDir !== "string" || !isAbsolute2(projectDir)) {
     throw new Error("Cannot start monitoring: the PR Monitor delivery hook has not registered this Codex conversation in the current host. Installing the plugin does not grant hook trust. Open Codex CLI on the host running this session (same OS user and CODEX_HOME), run /hooks, and enable/trust PR Monitor's SessionStart, UserPromptSubmit, PostToolUse, and Stop hooks. In Sesori or another client without /hooks, use a terminal on that host. Then send a new prompt here and retry. Updated hooks may need review again. Setup: https://github.com/sesori-ai/pr-monitor-plugin#trust-the-delivery-hooks-required\nNo monitor was started; reports cannot be delivered until hooks run.");
   }
   const adapter = createAdapter({ sessionId, projectDir });

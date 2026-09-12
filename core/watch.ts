@@ -9,6 +9,7 @@
 import { detectActivity, hasNewCiFailure, hasNewMergeConflict } from "./activity"
 import type { WatchConfig } from "./config"
 import { ciPhase, PollError, type PrSnapshot } from "./github"
+import { autoMergeFailureText, type AutoMergePullRequest } from "./merge"
 import {
   assessAutomaticReadiness,
   hasReadinessInvalidation,
@@ -25,6 +26,10 @@ export type ReadinessDeps = {
   onChanged: (ready: boolean) => void
 }
 
+export type AutoMergeDeps = {
+  squashMerge: (input: { pullRequest: AutoMergePullRequest }) => Promise<string>
+}
+
 export type WatchDeps = {
   now: () => number
   fetchSnapshot: () => Promise<PrSnapshot>
@@ -39,6 +44,8 @@ export type WatchDeps = {
   log: (message: string) => void
   onStopped: () => void
   readiness?: ReadinessDeps
+  autoMerge?: AutoMergeDeps
+  startupNotice?: string
 }
 
 const MAX_CONSECUTIVE_FAILURES = 10
@@ -74,13 +81,19 @@ export class PrWatch {
   private snapshotAt: number | undefined
   private stopped = false
   private stopCleanup: Promise<void> | undefined
-  // Only GitHub label mutation must drain before a successor can own this PR.
-  // Fetches and deliveries are fenced by `stopped` but must not block teardown.
+  // An already-started GitHub readiness mutation must drain before a successor
+  // can own this PR. This includes an auto-merge already in flight; stopping
+  // after label completion fences a follow-on merge that has not started yet.
+  // Fetches and deliveries are fenced by `stopped` but do not block teardown.
   private readinessMutation: Promise<unknown> | undefined
   private readinessRetry: boolean | undefined
   private readinessRetryBaseline: PrSnapshot | undefined
   private readinessError: string | undefined
   private reportedReadinessError: string | undefined
+  // One-shot result from an automatic readiness-triggered merge attempt. It is
+  // retained across delivery failure, then cleared by delivery or a superseding
+  // manual readiness action.
+  private autoMergeNotice: string | undefined
   // A poll may observe new feedback and a prefixed response together. The
   // ready label is still withdrawn and reported first; only a later quiet
   // report can restore it, so the feedback never disappears behind one poll.
@@ -119,9 +132,10 @@ export class PrWatch {
       readiness !== undefined && this.snapshot !== undefined
         ? `, ready for human review: ${hasReadyLabel(this.snapshot, readiness.label) ? "yes" : "no"}`
         : ""
+    const autoMerge = this.deps.autoMerge === undefined ? "" : ", auto-merge: squash"
     return (
       `${targetKey(this.target)} — ${phase}, ${this.dirty ? "activity buffered" : "quiet"}, ` +
-      `baseline ${baselineAge}m ago${failures}${ready}`
+      `baseline ${baselineAge}m ago${failures}${ready}${autoMerge}`
     )
   }
 
@@ -170,14 +184,20 @@ export class PrWatch {
       if (readiness === undefined || snapshot === undefined) {
         throw new Error("this watch does not have a readiness channel")
       }
+      // A manual action returns its own merge result directly. Do not let an
+      // undelivered automatic-attempt notice leak into a later report.
+      this.autoMergeNotice = undefined
       return await this.trackReadinessMutation(async () => {
-        const text = await readiness.change(ready)
+        let text = await readiness.change(ready)
         this.snapshot = withReadyLabel(snapshot, readiness.label, ready)
         if (!this.stopped) {
           this.clearReadinessFailure()
           this.autoReadyAfterInvalidation = false
           this.notifyReadyChanged(ready)
-          if (!ready && assessAutomaticReadiness(this.snapshot).eligible) {
+          if (ready) {
+            const autoMerge = await this.attemptAutoMerge({ snapshot: this.snapshot, report: false })
+            if (autoMerge !== undefined) text += `\n${autoMerge}`
+          } else if (assessAutomaticReadiness(this.snapshot).eligible) {
             this.dirty = true
             this.lastActivityAt = this.deps.now()
             this.holdStartedAt = undefined
@@ -279,6 +299,9 @@ export class PrWatch {
         this.notifyReadyChanged(desired)
         this.dirty = true
         this.urgent = true
+        // A failed mutation never authorizes auto-merge. The matching label may
+        // have been added externally after the error, so observation alone can
+        // confirm readiness but cannot prove a monitor-triggered merge intent.
         if (!desired) this.autoReadyAfterInvalidation = true
         return next
       } else if (!desired || assessAutomaticReadiness(next).eligible) {
@@ -439,6 +462,8 @@ export class PrWatch {
         readyLabel: readiness.label,
         replyPrefix: readiness.replyPrefix,
         readinessError: this.readinessError,
+        autoMergeEnabled: this.deps.autoMerge !== undefined,
+        autoMergeNotice: this.autoMergeNotice,
       }),
     ].join("\n")
   }
@@ -562,6 +587,7 @@ export class PrWatch {
         if (this.stopped) return changed
         this.clearReadinessFailure()
         this.notifyReadyChanged(ready)
+        if (ready) await this.attemptAutoMerge({ snapshot: changed, report: true })
         return changed
       } catch (error) {
         this.snapshot = snapshot
@@ -584,6 +610,28 @@ export class PrWatch {
     })
   }
 
+  private async attemptAutoMerge({
+    snapshot,
+    report,
+  }: {
+    snapshot: PrSnapshot
+    report: boolean
+  }): Promise<string | undefined> {
+    const autoMerge = this.deps.autoMerge
+    if (autoMerge === undefined) return undefined
+    let notice: string
+    try {
+      notice = await autoMerge.squashMerge({
+        pullRequest: { title: snapshot.title, headSha: snapshot.headSha },
+      })
+    } catch (error) {
+      notice = autoMergeFailureText({ error })
+      this.deps.log(`auto-merge failed for ${targetKey(this.target)}: ${error}`)
+    }
+    if (report) this.autoMergeNotice = notice
+    return notice
+  }
+
   private clearReadinessFailure(): void {
     this.readinessRetry = undefined
     this.readinessRetryBaseline = undefined
@@ -601,6 +649,7 @@ export class PrWatch {
 
   private afterReportDelivered(): void {
     this.reportedReadinessError = this.readinessError
+    this.autoMergeNotice = undefined
     if (!this.autoReadyAfterInvalidation) return
     this.autoReadyAfterInvalidation = false
     const snapshot = this.snapshot
@@ -661,9 +710,15 @@ export class PrWatch {
       readyLabel: readiness?.label,
       replyPrefix: readiness?.replyPrefix,
       readinessError: this.readinessError,
+      autoMergeEnabled: this.deps.autoMerge !== undefined,
+      autoMergeNotice: this.autoMergeNotice,
     })
     if (!this.initialAnnouncementPending || this.snapshot?.state !== "OPEN") return report
-    return report + "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, " +
+    const startupNotice = this.deps.startupNotice === undefined
+      ? ""
+      : `\n- Startup safety reset: ${this.deps.startupNotice}`
+    return report + startupNotice +
+      "\n- Startup/restart assessment: inspect the current head's checks, expected automated reviews, " +
       "and existing feedback now. If already settled with nothing left to do, call mark_ready without waiting " +
       "for a new event. Empty results after creation or a fresh push do not prove readiness; PR age alone is insufficient."
   }

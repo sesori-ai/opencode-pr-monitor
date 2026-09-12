@@ -206,9 +206,11 @@ Behavior notes for the Codex shell:
 - The slash commands are Claude Code only; use the `pr_monitor` tool directly (`status`, `stop`, `mark_ready`, ...).
 - The report spool is shared with Claude Code at `~/.claude/pr-monitor/spool/`. Codex queues are nested under
   `<host pid>/<thread id>`; hooks and waiters select only that conversation. Claude Code retains process routing.
-- Startup observes the existing ready label. The agent must assess the initial report, including after a harness
-  restart, and immediately mark an already-settled PR ready. Empty results after creation or a fresh push do not
-  establish readiness; age alone is insufficient. Automatic readiness continues for later observed activity.
+- Startup normally observes the existing ready label. With auto-merge enabled, startup instead removes
+  a pre-existing ready label and requires a fresh `mark_ready` judgment. The agent must assess the initial report,
+  including after a harness restart, and immediately mark an already-settled PR ready. Empty results after creation
+  or a fresh push do not establish readiness; age alone is insufficient. Automatic readiness continues for later
+  observed activity.
 - Across all hosts, clean review summaries, review quota notices and other no-op feedback still require agent
   judgment. After inspecting them and confirming no work remains, the agent calls `mark_ready` explicitly.
 
@@ -257,12 +259,63 @@ All four harnesses register the same tool:
 | `stop`   | PR identifier or `all`                 | Stop watching. |
 | `flush`  | PR identifier or `all`                 | On demand: immediately return a full status report and reset the "new since" baseline. Delivered reports already advance the baseline, so a flush after handling one isn't needed. |
 | `status` | —                                      | List this session's active monitors. |
-| `mark_ready` | `owner/repo#123` or full PR URL    | Unconditionally accept current observed state and add `readyLabel`. Use for non-actionable bot acknowledgements or other judgment calls that should not receive a reply. Creates the label if needed and releases Claude keep-alive. Standalone actions still require an open PR. |
+| `mark_ready` | `owner/repo#123` or full PR URL    | Add `readyLabel`; auto-merge opt-in also squash-merges. |
 | `unmark_ready` | `owner/repo#123` or full PR URL  | Remove the label now. It is idempotent and is not a permanent hold: an active monitor may restore readiness after a later clean assessment. |
+
+## Opt-in auto-merge
+
+> **Warning:** auto-merge is irreversible. Enable it only in user-owned config or a trusted repository whose
+> authenticated `gh` account is allowed to merge its pull requests. A checked-out project's config can enable it.
+
+Set `"autoMerge": true` in either global or project monitor config. Global config lives at
+`~/.config/pr-monitor/config.json`, or `$XDG_CONFIG_HOME/pr-monitor/config.json` when `XDG_CONFIG_HOME` is an
+absolute path.
+Project config can override it. An explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE` environment value overrides
+both config layers: `true`/`1` enables; `false`/`0`/empty disables. Any other value fails closed, disables auto-merge,
+and logs a warning. Restart the desktop host after changing its environment.
+
+```sh
+# Shell-launched hosts: explicit environment override
+export SESORI_PR_MONITOR_AUTO_MERGE=true
+
+# macOS GUI hosts for the current login session; restart the app afterward
+launchctl setenv SESORI_PR_MONITOR_AUTO_MERGE true
+```
+
+When enabled:
+
+- A successfully completed readiness transition performed by the monitor, or any successful `mark_ready` action
+  (watched or standalone), first keeps/applies `readyLabel`, then makes one squash-merge attempt. Merely observing a
+  label added externally—or after a failed/ambiguous label mutation—does not merge.
+- Starting a monitor on an open PR that already carries `readyLabel` removes that label before the watch starts.
+  The start result and, when `announceOnStart` is enabled, initial report say it was cleared and require the agent
+  to reassess the current head and call `mark_ready` again if appropriate. Session cleanup drains this reset before
+  a reloaded successor can mutate the PR.
+- A standalone `mark_ready` captures the head before applying the label and revalidates it afterward. If the head
+  changed—or cannot be revalidated safely—the merge is canceled and the monitor attempts to withdraw readiness.
+- The merge request is fenced to the accepted head SHA. The squash commit title is the current PR title and its
+  commit-message body is explicitly empty. If the response is lost, malformed, or an ambiguous server failure, the
+  monitor re-queries the PR: a merged matching head is success; an unproven outcome is unknown without another
+  attempt. Definitive GitHub 4xx rejection reasons remain intact; HTTP 409 invalidates the accepted head.
+- A successful merge dynamically creates and applies the blue `automatically-merged` label. Failure to apply this
+  marker cannot undo a completed merge and is reported as a warning.
+- A rejected or unknown merge leaves `readyLabel` in place, reports the outcome, and is not retried automatically
+  while that readiness state remains unchanged. A changed head invalidates standalone readiness instead. A later
+  new readiness transition, or an explicit later `mark_ready`, is a new attempt.
 
 ## Configuration
 
-Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls back to `.claude/pr-monitor.json` then `.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`; Pi/OMP use their `CONFIG_DIR_NAME` (`.pi`/`.omp`) before `.opencode/pr-monitor.json`. Pi reads project-local config only after project trust.
+Global config for every host lives at `~/.config/pr-monitor/config.json` (or under an absolute
+`XDG_CONFIG_HOME`). Optional project config uses `.pr-monitor.json`; Claude Code falls back to
+`.claude/pr-monitor.json` then
+`.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`; Hermes falls back to
+`.hermes/pr-monitor.json` then `.opencode/pr-monitor.json`; Pi/OMP use their `CONFIG_DIR_NAME` (`.pi`/`.omp`) before
+`.opencode/pr-monitor.json`. Pi reads project-local config only after project trust.
+
+Settings layer as: defaults → global config → first readable project/host config. Valid project values override
+matching global values; invalid values leave the lower layer unchanged. An explicit `SESORI_PR_MONITOR_AUTO_MERGE`
+environment value then overrides only `autoMerge`. Config is loaded for each new watch and standalone ready action;
+an active watch retains the values captured when it started.
 
 ```json
 {
@@ -274,6 +327,7 @@ Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls 
   "flushOnCiFailure": true,
   "desktopNotifications": false,
   "readyLabel": "ready-for-human-review",
+  "autoMerge": false,
   "keepAlive": true,
   "keepAliveMaxMinutes": 120
 }
@@ -289,6 +343,7 @@ Optional, per project: use `.pr-monitor.json` for every host. Claude Code falls 
 | `flushOnCiFailure`     | `true`  | Report a newly failing check at the next poll instead of waiting out `debounceMinutes` (and any CI hold), so CI fixes start sooner. Counts failures found while the suite is still running. At most one instant report per head commit — later failures on the same commit ride along with the debounced suite-conclusion report. Set `false` for debounce-only delivery. |
 | `desktopNotifications` | `false` | Claude Code only: emit an OS notification (macOS/Linux) when a report is delivered or spooled. |
 | `readyLabel`           | `ready-for-human-review` | Label managed automatically by active watches and explicitly by `mark_ready`/`unmark_ready`. |
+| `autoMerge`            | `false` | Opt into head-fenced, title-only squash merge after readiness. |
 | `keepAlive`            | `true`  | Claude Code fallback hosts only (no messaging socket): while a monitored PR lacks the ready label, refuse turn-end and have Claude wait for the next report. Ignored on push-enabled hosts, where reports arrive on their own. Set `false` for passive delivery. |
 | `keepAliveMaxMinutes`  | `120`   | Claude Code fallback hosts only: cap on how long the keep-alive loop waits with *nothing happening*. Refreshed by every delivered report, so it bounds idle time rather than total work time. Ignored on push-enabled hosts. |
 

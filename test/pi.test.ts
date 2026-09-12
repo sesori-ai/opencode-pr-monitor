@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
-import { readFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import test from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import type { MonitorConfig } from "../core/config"
+import { AUTO_MERGE_ENV, type MonitorConfig } from "../core/config"
 import type { GhRunner, PrSnapshot } from "../core/github"
 import { registerPiMonitor, piMonitorConfigPaths } from "../pi/extension"
 import { registerOmpMonitor } from "../pi/omp-adapter"
@@ -97,6 +98,7 @@ function monitorConfig(overrides: Partial<MonitorConfig> = {}): MonitorConfig {
     announceOnStart: true,
     flushOnCiFailure: true,
     readyLabel: "ready-for-human-review",
+    autoMerge: false,
     ...overrides,
   }
 }
@@ -132,6 +134,7 @@ function runnerHarness({ states = ["OPEN"] }: { states?: PrSnapshot["state"][] }
       snapshotIndex += 1
       return payload({ state })
     }
+    if (args[0] === "api" && args[1] === "user") return "sesori-bot"
     const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
     if (route.includes("/pulls/")) return JSON.stringify({ state: "open", merged: false })
     if (/\/labels$/.test(route) && !route.includes("/issues/")) throw new Error("label already exists")
@@ -381,6 +384,57 @@ test("package manifests expose the push-host skill exactly once", async () => {
   }
   assert.doesNotMatch(pushSkill, /await-activity\.mjs/)
   assert.match(claudeSkill, /await-activity\.mjs/)
+})
+
+test("untrusted Pi layers user-global config without reading project config", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pr-monitor-pi-global-"))
+  const globalDirectory = join(root, "global", "pr-monitor")
+  const projectDirectory = join(root, "project")
+  await Promise.all([
+    mkdir(globalDirectory, { recursive: true }),
+    mkdir(projectDirectory, { recursive: true }),
+  ])
+  await writeFile(join(globalDirectory, "config.json"), JSON.stringify({
+    announceOnStart: false,
+    ignoreCommentTag: "[global reply]",
+  }))
+  await writeFile(join(projectDirectory, ".pr-monitor.json"), JSON.stringify({
+    ignoreCommentTag: "[project reply]",
+  }))
+  const previousXdgConfigHome = process.env["XDG_CONFIG_HOME"]
+  const previousAutoMerge = process.env[AUTO_MERGE_ENV]
+  process.env["XDG_CONFIG_HOME"] = join(root, "global")
+  delete process.env[AUTO_MERGE_ENV]
+  const pi = fakePiHarness()
+  const timers = timerHarness()
+  const runner = runnerHarness()
+  const controller = registerPiMonitor({
+    pi: pi.pi,
+    dependencies: {
+      runGh: runner.runGh,
+      schedule: timers.schedule,
+      cancel: timers.cancel,
+      log: () => {},
+    },
+  })
+  try {
+    const result = await executeTool({
+      tool: pi.tool,
+      action: MonitorAction.start,
+      pr: "sesori/example#42",
+      context: extensionContext({ trusted: false, cwd: projectDirectory }),
+    })
+
+    assert.match(result, /\[global reply\]/)
+    assert.doesNotMatch(result, /\[project reply\]/)
+  } finally {
+    await controller.dispose()
+    if (previousXdgConfigHome === undefined) delete process.env["XDG_CONFIG_HOME"]
+    else process.env["XDG_CONFIG_HOME"] = previousXdgConfigHome
+    if (previousAutoMerge === undefined) delete process.env[AUTO_MERGE_ENV]
+    else process.env[AUTO_MERGE_ENV] = previousAutoMerge
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test("Pi project configuration paths honor trust and CONFIG_DIR_NAME", () => {

@@ -46,10 +46,25 @@ export type PrSnapshot = {
 
 export class PollError extends Error {
   readonly notFound: boolean
-  constructor(message: string, opts?: { notFound?: boolean }) {
+  readonly httpStatus: number | undefined
+  readonly exitCode: number | string | undefined
+
+  constructor(
+    message: string,
+    opts?: { notFound?: boolean; httpStatus?: number; exitCode?: number | string },
+  ) {
     super(message)
     this.notFound = opts?.notFound ?? false
+    this.httpStatus = opts?.httpStatus
+    this.exitCode = opts?.exitCode
   }
+}
+
+export function ghHttpStatus({ message }: { message: string }): number | undefined {
+  const match = /\bHTTP\s+(\d{3})\b/i.exec(message)
+  if (match === null) return undefined
+  const status = Number(match[1])
+  return Number.isInteger(status) ? status : undefined
 }
 
 export type GhRunner = (args: string[]) => Promise<string>

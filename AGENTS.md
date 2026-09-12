@@ -14,7 +14,7 @@ Adapters own delivery/lifecycle/config paths, not watch orchestration.
 
 ```
 core/                # Pure per-PR state, GitHub normalization, reports, config types/loading.
-  config.ts    # Common MonitorConfig plus ClaudeMonitorConfig; permissive first-readable loading.
+  config.ts    # Common/Claude config; global base + first project override + env precedence.
   target.ts    # Parses PR target: "owner/repo#n" or full GitHub URL.
   github.ts    # GraphQL polling via injected GhRunner; normalizes into PrSnapshot.
   activity.ts  # detectActivity(prev, next): what counts as a change.
@@ -22,6 +22,7 @@ core/                # Pure per-PR state, GitHub normalization, reports, config 
   readiness.ts # Automatic eligibility/invalidation from CI, mergeability, heads, and acknowledged feedback.
   report.ts    # Markdown report rendering.
   label.ts     # mark_ready / unmark_ready: add or remove the readyLabel via gh REST.
+  merge.ts     # Config/env-gated, head-fenced title-only squash merge + successful marker label.
 
 runtime/             # Host-neutral application/session layer.
   monitor-session.ts # Watch registry, auth identity, actions, timers, labels, shutdown channels.
@@ -138,9 +139,11 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
   `MERGEABLE -> UNKNOWN -> CONFLICTING` settle is caught and flushed immediately.
 - **Failure handling** — notFound → stop with notice; 10 consecutive poll failures → stop; 10 consecutive delivery failures → stop. Delivery failures roll back the baseline so the same activity is retried. A failed initial announcement keeps its zero baseline, marks the watch urgent, and retries the complete startup report at the next poll.
 - **Reentrancy guard** — `runExclusive` (per-watch promise queue) serializes `tick()` and `manualFlush()` so overlapping fetches can't apply out of order; ticks skip while an op is pending, manual flushes queue. Auto-flush delivery is **awaited inside** that op, not fire-and-forget: its failure path rolls back exactly the state a later flush advances (`lastFlushAt`, `lastFlushedSnapshot`, `dirty`, `holdStartedAt`, `urgent`), so a late rejection from an overlapping delivery would otherwise rewind a newer report's baseline and re-fire it immediately. Comment "new since" comparisons use IDs from `lastFlushedSnapshot`, avoiding GitHub's second-granularity timestamp race. Ticks skipping while a report is in flight is the intended consequence. `tick` also re-checks `stopped` after its awaited fetch so a concurrent `stop()` prevents any late apply/deliver.
-- **Stop/mutation fencing** — a stopped watch rejects queued flush/ready actions and remains registered only until an
-  already-started label mutation drains. Session cleanup and OpenCode reload takeover do not await stalled fetches
-  or deliveries; `stopped` fences their continuations before a successor can be mutated.
+- **Stop/mutation fencing** — a stopped watch rejects queued flush/ready actions and remains registered until an
+  already-started readiness operation drains. An auto-merge already in flight drains; if stop wins while the label
+  call is pending, `stopped` fences the not-yet-started follow-on merge. A pre-registration stale-label reset is
+  tracked separately in the session cleanup barrier so reload takeover awaits it. Cleanup does not await stalled
+  fetches or deliveries; `stopped`/generation checks fence their continuations before a successor is mutated.
 - **Sessions, Claude Code shell**: one MCP server process per Claude Code process, so the watches map IS the session scope. Monitors survive `/clear` (same process) and die with the process. Spool routing: spool dirs are named by the owning Claude Code pid (= MCP server's ppid); the hook drains dirs named by its parent/grandparent pid (hook ← sh ← claude; deliberately NOT the full ancestry, which would let a nested claude session steal the outer session's reports) and GCs dead-pid dirs. Ancestry is read from `/proc` where it exists, else `ps`; with neither the hook drains **nothing** — the number of live spools is not evidence of ownership (a session with no monitor still fires hooks), so there is no cardinality trick that substitutes for real ancestry. A pid is not an identity either — the OS recycles them — so `claimSpool` records the Claude Code process's start time in `<spool dir>/owner` (tmp+rename; a torn read must not look like a foreign token) at server startup, and it is enforced in three places: the server discards anything it cannot prove it inherited before spooling (a foreign token *and* an untokened dir, since stamping the latter would launder a vanished session's reports); `spoolReport` re-checks the token before every write, so an orphaned server whose parent's pid got recycled cannot write into the newcomer's spool; the hook *skips* — never deletes — a dir whose token mismatches, because deleting would race the newcomer's `claimSpool`. On macOS the token is `ps -o lstart=` (1-second resolution), a deliberate residue: coarser than ideal, but calling macOS unverifiable would restore pid-only routing there, which is strictly worse. Report filenames carry the *server* pid too (`seq` restarts at 0 in each process while the dir outlives them, so an /mcp restart could otherwise collide within a millisecond and lose a report). Drains claim each report via unlink-before-emit so concurrent hook invocations never deliver one twice, and the script must not process.exit after writing (stdout past the 64KB pipe buffer would be truncated). PostToolUse also fires for tool calls inside Task subagents — those hook inputs carry `agent_id`, and drain-spool.mjs skips them so a report is never consumed by a subagent's context (verified empirically on Claude Code 2.1.216). Shutdown (stdin EOF/SIGTERM) spools a `Monitor stopped` notice per watch — delivered if the same process continues (server restart), silently GC'd if the session is gone.
 - **Reload takeover, opencode shell** — `globalThis.__sesoriPrMonitorTakeovers` kills zombie timers from prior plugin instances; old watches send one factual stop notice. (`session.deleted` stops matching watches silently.) Graceful `dispose` cannot use `promptAsync`: OpenCode acknowledges that endpoint before its fork persists the message, then disposal cancels the fork. Shutdown uses synchronous `session.prompt` with `noReply: true`, persisting each notice before disposal without starting a model turn.
 - **Pi-family lifecycle** — upstream Pi tears down the old extension instance and emits post-success
@@ -150,10 +153,14 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
 - Reports never include comment bodies. They include factual counts/authors/readiness plus explicit workflow
   direction when the PR is unready or new feedback needs inspection.
 - **The monitor owns waiting.** Tool descriptions and every shipped skill forbid agent-created sleeps, delays, timeouts, scheduled checks, background polling, repeated `gh pr checks`, and routine `status`/`flush`. All shells end the turn and rely on push delivery; only a legacy Claude host without the messaging socket may be handed the exact `await-activity.mjs` command by a keep-alive message, and Claude may run only that.
-- **Startup readiness** — observe the existing label without auto-adding it, including disabled/retried initial
-  announcements. The initial report and all skills require agent assessment of current-head checks, expected
-  automated reviews and feedback. A restarted settled PR can be marked immediately; empty fresh results and age
-  alone cannot justify handoff. Later observed activity retains automatic readiness.
+- **Startup readiness** — normally observe the existing label without auto-adding it, including disabled/retried
+  initial announcements. With auto-merge enabled by config or environment, remove a pre-existing ready label before
+  registration and tell the agent in the start result—and the initial report when announcements are enabled—to
+  reassess and call `mark_ready` again; startup never merges stale handoff state, and cleanup drains this mutation
+  before takeover. The initial report and all skills
+  require assessment of current-head
+  checks, expected automated reviews and feedback. A restarted settled PR can be marked immediately; empty fresh
+  results and age alone cannot justify handoff. Later observed activity retains automatic readiness.
 - **Automatic readiness** (`core/readiness.ts`, `core/watch.ts`) — adds the label after green/no CI, definite
   mergeability, and prefixed local replies on every feedback channel. A later head, relevant comment/summary,
   acknowledgement edit/deletion, CI regression, or conflict withdraws it urgently. Mixed same-second
@@ -165,6 +172,17 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
   `pulls/{n}` and refuse non-open targets: label endpoints share the issue namespace, so a plain issue number or a
   terminal PR would otherwise produce false success. `mark_ready` best-effort creates the green label before adding
   it. `unmark_ready` treats a missing label as success. Standalone actions need no active monitor.
+- **Configurable auto-merge** (`core/merge.ts`) — `autoMerge: true` in user-global or trusted project config enables
+  the feature; an explicitly defined `SESORI_PR_MONITOR_AUTO_MERGE=true|false|1|0` overrides both layers and invalid
+  values fail closed. Automatic readiness and watched/standalone `mark_ready` first retain the ready label, then make
+  one squash-merge attempt fenced to the accepted head SHA. Standalone `mark_ready` revalidates the captured head
+  after labeling and best-effort withdraws readiness if it changed or cannot be proven safe; failed cleanup reports
+  that readiness remains. Squash commit title is the PR title
+  and `commit_message` is explicitly empty. An indeterminate request is reconciled: a matching merged head is
+  success; otherwise the outcome is unknown and is not retried. Success best-effort creates/applies
+  `automatically-merged`; marker failure is a warning because merge is irreversible. Definitive rejection keeps
+  readiness and is not retried while that state stays unchanged. External/pre-existing label observation never
+  triggers merge. A manual ready action clears any undelivered automatic-attempt notice before recording its result.
 - **Keep-alive loop, Claude Code shell (fallback only)** — armed only when the session has no messaging socket;
   with a push channel `session.json` carries `keepAlive: false`, the Stop hook never blocks, and the session goes
   idle freely (failed pushes retry through the watch, not through hooks). In fallback: while a monitored PR is not handed off, the
@@ -182,19 +200,25 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
 
 ## Configuration
 
-`pr-monitor.json`, loaded fresh per start and standalone ready action: all adapters first look for repository
-`.pr-monitor.json`. Active-watch ready actions use the config captured at start. OpenCode falls back to project and
-worktree `.opencode/pr-monitor.json`; Claude Code uses `.claude/` then `.opencode/`; trusted Pi/OMP use
+Config loads fresh per start and standalone ready action. Defaults are overlaid by user-global
+`~/.config/pr-monitor/config.json` (or an absolute `$XDG_CONFIG_HOME/pr-monitor/config.json`), then the first
+readable project candidate. Active-watch ready actions use config captured at start. Every adapter starts project
+candidates with
+`.pr-monitor.json`; OpenCode falls back to project/worktree `.opencode/pr-monitor.json`; Claude Code uses `.claude/`
+then `.opencode/`; Hermes uses `.hermes/` then `.opencode/`; trusted Pi/OMP use
 `${CONFIG_DIR_NAME}/pr-monitor.json` then `.opencode/`. OMP's compatibility shim resolves the config directory to
 `.omp`; do not replace it with a hardcoded host branch.
 `MonitorConfig` contains common settings; `ClaudeMonitorConfig` adds `desktopNotifications`, `keepAlive`, and
-`keepAliveMaxMinutes`. Loading is permissive: unknown keys ignored, invalid values dropped, invalid JSON logged,
-missing file → defaults. `ignoreCommentTag` is the mandatory local agent-reply prefix, defaults to
-`<!-- pr-monitor:reply -->`, and matches only at the start of a comment.
+`keepAliveMaxMinutes`. Unknown keys are ignored, invalid values leave the lower layer unchanged, invalid JSON is
+logged, and missing files use lower layers/defaults. An explicit auto-merge environment value overrides config.
+`ignoreCommentTag` is the mandatory local agent-reply prefix, defaults to `<!-- pr-monitor:reply -->`, and matches
+only at the start of a comment.
 
 ## GitHub layer
 
-- Injected `GhRunner`: OpenCode wraps Bun `$` in `opencode/gh.ts`; Node adapters use `runtime/node-gh.ts`. Both throw `PollError(msg, { notFound })` on failure; `core/github.ts` imports neither host.
+- Injected `GhRunner`: OpenCode wraps Bun `$` in `opencode/gh.ts`; Node adapters use `runtime/node-gh.ts`. Both
+  preserve `notFound`, parsed GitHub HTTP status, and CLI exit code in `PollError`; `core/github.ts` imports neither
+  host. Auto-merge uses 4xx status metadata to preserve definitive rejection instead of reconciling it as unknown.
 - `PR_QUERY` (`core/github.ts`) fetches title, URL, state, mergeable, head SHA, checks, review requests/latest reviews
   plus summary metadata, review threads/comments, issue comments, and labels. Overflow pages are fetched for check
   contexts, latest reviews, review threads, and labels so readiness cannot be computed from a truncated connection.

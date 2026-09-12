@@ -1,8 +1,27 @@
 import assert from "node:assert/strict"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
 import { PrMonitorPlugin } from "../opencode/index"
+
+let originalXdgConfigHome: string | undefined
+let originalAutoMerge: string | undefined
+
+test.beforeEach(() => {
+  originalXdgConfigHome = process.env["XDG_CONFIG_HOME"]
+  originalAutoMerge = process.env["SESORI_PR_MONITOR_AUTO_MERGE"]
+  process.env["XDG_CONFIG_HOME"] = join(tmpdir(), `pr-monitor-opencode-test-${process.pid}`)
+  process.env["SESORI_PR_MONITOR_AUTO_MERGE"] = "false"
+})
+
+test.afterEach(() => {
+  if (originalXdgConfigHome === undefined) delete process.env["XDG_CONFIG_HOME"]
+  else process.env["XDG_CONFIG_HOME"] = originalXdgConfigHome
+  if (originalAutoMerge === undefined) delete process.env["SESORI_PR_MONITOR_AUTO_MERGE"]
+  else process.env["SESORI_PR_MONITOR_AUTO_MERGE"] = originalAutoMerge
+})
 
 test("OpenCode shutdown persists notices synchronously without starting a model turn", async () => {
   const promptAsyncBodies: unknown[] = []
