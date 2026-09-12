@@ -2,7 +2,7 @@
 // transitions are trusted triggers; this module performs one head-fenced
 // merge attempt, reconciles indeterminate responses, and marks success.
 
-import type { GhRunner } from "./github"
+import { PollError, type GhRunner } from "./github"
 import { getOpenPullRequest } from "./label"
 import { targetKey, type Target } from "./target"
 
@@ -18,10 +18,14 @@ export type AutoMergePullRequest = {
 
 export class AutoMergeHeadChangedError extends Error {
   readonly expectedHeadSha: string
-  readonly actualHeadSha: string
+  readonly actualHeadSha: string | undefined
 
-  constructor({ expectedHeadSha, actualHeadSha }: { expectedHeadSha: string; actualHeadSha: string }) {
-    super(`the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`)
+  constructor({ expectedHeadSha, actualHeadSha }: { expectedHeadSha: string; actualHeadSha?: string }) {
+    super(
+      actualHeadSha === undefined
+        ? `GitHub rejected the accepted head ${expectedHeadSha} with HTTP 409 before confirming the merge`
+        : `the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`,
+    )
     this.name = "AutoMergeHeadChangedError"
     this.expectedHeadSha = expectedHeadSha
     this.actualHeadSha = actualHeadSha
@@ -42,6 +46,11 @@ type PullRequestMergeState = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isDefinitiveHttpRejection(error: unknown): error is PollError & { httpStatus: number } {
+  if (!(error instanceof PollError) || error.httpStatus === undefined) return false
+  return error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 408
 }
 
 export function autoMergeFailureText({ error }: { error: unknown }): string {
@@ -215,6 +224,12 @@ export async function squashMergePullRequest({
       "commit_message=",
     ])
   } catch (error) {
+    if (isDefinitiveHttpRejection(error)) {
+      if (error.httpStatus === 409) {
+        throw new AutoMergeHeadChangedError({ expectedHeadSha: pullRequest.headSha })
+      }
+      throw error
+    }
     return await reconcileIndeterminateMerge({ runGh, target, pullRequest, cause: error })
   }
 

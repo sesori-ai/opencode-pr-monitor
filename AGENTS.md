@@ -216,7 +216,9 @@ only at the start of a comment.
 
 ## GitHub layer
 
-- Injected `GhRunner`: OpenCode wraps Bun `$` in `opencode/gh.ts`; Node adapters use `runtime/node-gh.ts`. Both throw `PollError(msg, { notFound })` on failure; `core/github.ts` imports neither host.
+- Injected `GhRunner`: OpenCode wraps Bun `$` in `opencode/gh.ts`; Node adapters use `runtime/node-gh.ts`. Both
+  preserve `notFound`, parsed GitHub HTTP status, and CLI exit code in `PollError`; `core/github.ts` imports neither
+  host. Auto-merge uses 4xx status metadata to preserve definitive rejection instead of reconciling it as unknown.
 - `PR_QUERY` (`core/github.ts`) fetches title, URL, state, mergeable, head SHA, checks, review requests/latest reviews
   plus summary metadata, review threads/comments, issue comments, and labels. Overflow pages are fetched for check
   contexts, latest reviews, review threads, and labels so readiness cannot be computed from a truncated connection.

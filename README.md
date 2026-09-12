@@ -294,8 +294,9 @@ When enabled:
 - A standalone `mark_ready` captures the head before applying the label and revalidates it afterward. If the head
   changed—or cannot be revalidated safely—the merge is canceled and the monitor attempts to withdraw readiness.
 - The merge request is fenced to the accepted head SHA. The squash commit title is the current PR title and its
-  commit-message body is explicitly empty. If the request response is lost or malformed, the monitor re-queries the
-  PR: a merged matching head is success; an unproven outcome is reported as unknown without another attempt.
+  commit-message body is explicitly empty. If the response is lost, malformed, or an ambiguous server failure, the
+  monitor re-queries the PR: a merged matching head is success; an unproven outcome is unknown without another
+  attempt. Definitive GitHub 4xx rejection reasons remain intact; HTTP 409 invalidates the accepted head.
 - A successful merge dynamically creates and applies the blue `automatically-merged` label. Failure to apply this
   marker cannot undo a completed merge and is reported as a warning.
 - A rejected or unknown merge leaves `readyLabel` in place, reports the outcome, and is not retried automatically

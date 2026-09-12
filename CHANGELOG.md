@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SESORI_PR_MONITOR_AUTO_MERGE` environment value taking final precedence. Automatic readiness and `mark_ready`
   retain the ready label, then make one head-fenced squash merge whose commit uses only the PR title. Successful
   merges receive a dynamically created `automatically-merged` label; rejected or unknown outcomes keep readiness
-  and are not retried automatically. Lost or malformed merge responses are reconciled against the accepted head.
+  and are not retried automatically. Lost, 5xx, or malformed merge responses are reconciled against the accepted
+  head, while preserved GitHub 4xx metadata keeps definitive rejection reasons intact.
   With this mode enabled, startup clears a pre-existing ready label behind the lifecycle cleanup barrier. Standalone
   readiness withdrawal is attempted if its accepted head changes before GitHub confirms the merge; cleanup failure
   is surfaced without falsely reporting the label absent.

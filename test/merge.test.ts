@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import type { GhRunner } from "../core/github"
+import { PollError, type GhRunner } from "../core/github"
 import {
   AUTO_MERGED_LABEL,
   AutoMergeHeadChangedError,
@@ -64,6 +64,36 @@ test("auto-merge failure leaves marker label untouched and surfaces GitHub's rea
     /Required review is missing/,
   )
   assert.equal(calls.length, 1)
+})
+
+test("a definitive HTTP merge rejection preserves GitHub's reason without reconciliation", async () => {
+  const calls: string[][] = []
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    throw new PollError("Required review is missing (HTTP 405)", { httpStatus: 405, exitCode: 1 })
+  }
+
+  await assert.rejects(
+    squashMergePullRequest({ runGh, target, pullRequest }),
+    /Required review is missing/,
+  )
+  assert.equal(calls.length, 1)
+})
+
+test("an HTTP 409 cancels the accepted head without treating the response as unknown", async () => {
+  const runGh: GhRunner = async () => {
+    throw new PollError("Head branch was modified (HTTP 409)", { httpStatus: 409, exitCode: 1 })
+  }
+
+  await assert.rejects(
+    squashMergePullRequest({ runGh, target, pullRequest }),
+    (error: unknown) => {
+      assert.ok(error instanceof AutoMergeHeadChangedError)
+      assert.equal(error.expectedHeadSha, pullRequest.headSha)
+      assert.equal(error.actualHeadSha, undefined)
+      return true
+    },
+  )
 })
 
 test("an indeterminate merge response reconciles a merged accepted head as success", async () => {

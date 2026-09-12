@@ -109,11 +109,21 @@ function loadMonitorConfig(input) {
 // core/github.ts
 var PollError = class extends Error {
   notFound;
+  httpStatus;
+  exitCode;
   constructor(message, opts) {
     super(message);
     this.notFound = opts?.notFound ?? false;
+    this.httpStatus = opts?.httpStatus;
+    this.exitCode = opts?.exitCode;
   }
 };
+function ghHttpStatus({ message }) {
+  const match = /\bHTTP\s+(\d{3})\b/i.exec(message);
+  if (match === null) return void 0;
+  const status = Number(match[1]);
+  return Number.isInteger(status) ? status : void 0;
+}
 var PR_QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -513,7 +523,9 @@ var AutoMergeHeadChangedError = class extends Error {
   expectedHeadSha;
   actualHeadSha;
   constructor({ expectedHeadSha, actualHeadSha }) {
-    super(`the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`);
+    super(
+      actualHeadSha === void 0 ? `GitHub rejected the accepted head ${expectedHeadSha} with HTTP 409 before confirming the merge` : `the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`
+    );
     this.name = "AutoMergeHeadChangedError";
     this.expectedHeadSha = expectedHeadSha;
     this.actualHeadSha = actualHeadSha;
@@ -527,6 +539,10 @@ var AutoMergeOutcomeUnknownError = class extends Error {
 };
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+function isDefinitiveHttpRejection(error) {
+  if (!(error instanceof PollError) || error.httpStatus === void 0) return false;
+  return error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 408;
 }
 function autoMergeFailureText({ error }) {
   if (error instanceof AutoMergeOutcomeUnknownError) {
@@ -645,6 +661,12 @@ async function squashMergePullRequest({
       "commit_message="
     ]);
   } catch (error) {
+    if (isDefinitiveHttpRejection(error)) {
+      if (error.httpStatus === 409) {
+        throw new AutoMergeHeadChangedError({ expectedHeadSha: pullRequest.headSha });
+      }
+      throw error;
+    }
     return await reconcileIndeterminateMerge({ runGh, target, pullRequest, cause: error });
   }
   let result;
@@ -2018,7 +2040,8 @@ function createNodeGhRunner() {
       if (error) {
         const message = stderr.trim() || error.message;
         const notFound = /could not resolve to|not found|404/i.test(message) && !/could not resolve host/i.test(message);
-        reject(new PollError(message, { notFound }));
+        const exitCode = typeof error.code === "number" || typeof error.code === "string" ? error.code : void 0;
+        reject(new PollError(message, { notFound, httpStatus: ghHttpStatus({ message }), exitCode }));
         return;
       }
       resolve2(stdout);

@@ -84,10 +84,11 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   explicitly empty `commit_message`; PR body text is never copied into the commit body.
 - A successful merge best-effort creates and applies the fixed blue `automatically-merged` label. Failure to add that
   marker is reported without misreporting or attempting to undo the completed merge.
-- A lost, rejected, or malformed merge response never triggers a blind retry. An indeterminate request is followed
-  by one PR-state query: a matching merged head is reported as success, a changed open head invalidates standalone
-  readiness, and any other unproven outcome is reported as unknown. Definitive rejection and unknown outcome leave
-  readiness present. A later readiness transition or explicit `mark_ready` is a new attempt.
+- A lost, rejected, or malformed merge response never triggers a blind retry. Parsed 4xx/exit metadata preserves a
+  definitive GitHub rejection and its reason (HTTP 409 invalidates the accepted head). An indeterminate transport,
+  5xx, or malformed response gets one PR-state query: a matching merged head is success, a changed open head
+  invalidates standalone readiness, and any other unproven outcome is unknown. Definitive rejection and unknown
+  outcome leave readiness present. A later readiness transition or explicit `mark_ready` is a new attempt.
 - A manual ready action clears an undelivered automatic-attempt notice so later reports cannot describe an obsolete
   failure after the manual attempt succeeds.
 - Reports, start results, status, tool wording, commands, and shipped skills expose enabled state and its irreversible
@@ -233,7 +234,8 @@ unprefixed local-user follow-ups, bot acknowledgements, review summaries, head c
 transient `UNKNOWN`, delivery failure, and casing. Cross lifecycle boundaries while a start, poll, label mutation, or
 report is in flight. Vary automatic/manual add, automatic withdrawal, mutation retry, existing/missing label, plain
 issue, and terminal PR. Exercise global/project inheritance, project override, enabled/disabled/invalid auto-merge
-environment values, stale head rejection, startup with a ready label, merge rejection, and marker-label failure.
+environment values, stale-head withdrawal, startup reset drainage, definitive rejection, indeterminate-response
+reconciliation, cleanup failure, and marker-label failure.
 
 ## Failure Signals
 
@@ -246,8 +248,10 @@ environment values, stale head rejection, startup with a ready label, merge reje
   readiness, or a manual mark is immediately undone by state it explicitly accepted.
 - Global config does not reach every host, project config fails to override it, an explicit environment value fails
   to override both, or untrusted Pi reads project-local config. Startup auto-merges or preserves a stale ready label
-  while auto-merge is enabled; a merge is not head-fenced; squash commit body is non-empty; merge failure removes
-  readiness or retries unchanged state; or marker failure falsely reports a successful merge as failed.
+  while auto-merge is enabled; a merge is not head-fenced; squash commit body is non-empty; a definitive rejection
+  becomes unknown; an indeterminate result is retried or declared failed without reconciliation; ordinary merge
+  failure removes readiness; stale standalone authorization remains ready without a surfaced cleanup attempt; or
+  marker failure falsely reports a successful merge as failed.
 - A canceled session transition loses a watch, a successful transition retains an old timer, or an old session
   delivers into/removes readiness from a successor watch.
 - An agent creates a second wait/poll mechanism, Pi/OMP fails to trigger an idle turn, or a host discovers duplicate

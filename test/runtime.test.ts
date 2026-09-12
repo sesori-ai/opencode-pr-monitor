@@ -795,6 +795,7 @@ test("standalone mark_ready withdraws readiness when the head changes while labe
     const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
     if (route === "repos/sesori/example/pulls/42") {
       pullRequestReads += 1
+      // Capture, markReadyForHumanReview validation, then post-label revalidation.
       const headSha = pullRequestReads >= 3 ? "replacement-head" : "accepted-head"
       return JSON.stringify({ state: "open", merged: false, title: "Standalone title", head: { sha: headSha } })
     }
@@ -813,6 +814,7 @@ test("standalone mark_ready withdraws readiness when the head changes while labe
   assert.equal(marked.ready?.ready, false)
   assert.equal(calls.some((args) => args.some((arg) => arg.endsWith("/pulls/42/merge"))), false)
   assert.equal(calls.some((args) => args.includes("DELETE")), true)
+  assert.equal(pullRequestReads, 4)
 })
 
 test("standalone mark_ready withdraws readiness when the fenced merge observes a later push", async () => {
@@ -823,6 +825,8 @@ test("standalone mark_ready withdraws readiness when the fenced merge observes a
     const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
     if (route === "repos/sesori/example/pulls/42") {
       pullRequestReads += 1
+      // The fourth read reconciles the failed PUT after capture, label
+      // validation, and post-label revalidation all accepted the old head.
       const headSha = pullRequestReads >= 4 ? "replacement-head" : "accepted-head"
       return JSON.stringify({ state: "open", merged: false, title: "Standalone title", head: { sha: headSha } })
     }
@@ -840,6 +844,7 @@ test("standalone mark_ready withdraws readiness when the fenced merge observes a
   assert.match(marked.text, /no longer flagged for human review/)
   assert.equal(marked.ready?.ready, false)
   assert.equal(calls.some((args) => args.includes("DELETE")), true)
+  assert.equal(pullRequestReads, 5)
 })
 
 test("failed standalone safety withdrawal reports the still-present ready state", async () => {

@@ -5,6 +5,7 @@ import { detectActivity, hasNewCiFailure, hasNewMergeConflict } from "../core/ac
 import { loadMonitorConfig, type WatchConfig } from "../core/config"
 import {
   fetchPrSnapshot,
+  ghHttpStatus,
   normalizeSnapshot,
   PollError,
   type CommentMeta,
@@ -167,6 +168,12 @@ function watchHarness(
     },
   }
 }
+
+test("GitHub CLI HTTP status metadata is parsed without misclassifying transport failures", () => {
+  assert.equal(ghHttpStatus({ message: "gh: Pull Request is not mergeable (HTTP 405)" }), 405)
+  assert.equal(ghHttpStatus({ message: "HTTP 409: Conflict" }), 409)
+  assert.equal(ghHttpStatus({ message: "could not resolve host: api.github.com" }), undefined)
+})
 
 test("the default debounce is two minutes", async () => {
   const loaded = await loadMonitorConfig({ paths: [], globalPaths: [], environment: {}, log: () => {} })
