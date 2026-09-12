@@ -863,6 +863,30 @@ test("manual readiness triggers auto-merge and returns its result", async () => 
   assert.deepEqual(harness.autoMerges, [{ title: "Manual title", headSha: "manual-head" }])
 })
 
+test("manual readiness clears an undelivered automatic merge notice", async () => {
+  const initial = snapshot({ checks: [{ name: "tests", outcome: "pending" }] })
+  const passed = snapshot({
+    title: "Accepted title",
+    headSha: "accepted-head",
+    checks: [{ name: "tests", outcome: "success" }],
+  })
+  const harness = watchHarness(
+    initial,
+    [passed, passed],
+    config({ announceOnStart: false }),
+    { readiness: true, autoMerge: true, autoMergeFailures: 1, deliveryFailures: 1 },
+  )
+
+  await harness.watch.tick()
+  harness.advance(120_001)
+  await harness.watch.tick()
+  const manualResult = await harness.watch.manualSetReady(true)
+  const stopNotice = harness.watch.stopNotice("Monitor stopped for test.")
+
+  assert.match(manualResult, /Auto-merge succeeded/)
+  assert.doesNotMatch(stopNotice, /Auto-merge failed|merge rejected/)
+})
+
 test("external removal plus feedback reports unready before an acknowledged restore", async () => {
   const initialThread = thread("thread-1", false, [
     {

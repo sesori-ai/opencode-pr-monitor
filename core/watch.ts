@@ -91,7 +91,8 @@ export class PrWatch {
   private readinessError: string | undefined
   private reportedReadinessError: string | undefined
   // One-shot result from an automatic readiness-triggered merge attempt. It is
-  // retained across delivery failure, then cleared after successful delivery.
+  // retained across delivery failure, then cleared by delivery or a superseding
+  // manual readiness action.
   private autoMergeNotice: string | undefined
   // A poll may observe new feedback and a prefixed response together. The
   // ready label is still withdrawn and reported first; only a later quiet
@@ -183,6 +184,9 @@ export class PrWatch {
       if (readiness === undefined || snapshot === undefined) {
         throw new Error("this watch does not have a readiness channel")
       }
+      // A manual action returns its own merge result directly. Do not let an
+      // undelivered automatic-attempt notice leak into a later report.
+      this.autoMergeNotice = undefined
       return await this.trackReadinessMutation(async () => {
         let text = await readiness.change(ready)
         this.snapshot = withReadyLabel(snapshot, readiness.label, ready)

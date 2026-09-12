@@ -80,9 +80,10 @@ Address everything in one batch:
   them. Reports intentionally contain authors/counts, not comment bodies.
 - **A local-account, unprefixed comment:** treat it as a human instruction even
   though the agent uses the same GitHub account.
-- **Auto-merge failure:** the ready label remains and the monitor does not retry
-  the unchanged readiness state. Inspect the reason, address any blocker, then
-  use `mark_ready` only when an explicit new merge attempt is warranted.
+- **Auto-merge rejection or unknown outcome:** the ready label remains and the
+  monitor does not retry unchanged readiness. A changed head instead cancels
+  standalone readiness. Inspect the result, address any blocker, then use
+  `mark_ready` only when an explicit new merge attempt is warranted.
 - **Merged/closed:** monitoring stopped; no further action.
 
 When taking action, reply on GitHub with the configured prefix first. It is the

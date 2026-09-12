@@ -432,6 +432,111 @@ test("lifecycle cleanup invalidates a start that is still loading", async () => 
   assert.equal(timers.timers.length, 0)
 })
 
+test("session cleanup waits for a startup ready-label reset before allowing takeover", async () => {
+  const timers = timerHarness()
+  const channel = channelHarness()
+  let announceRemoval!: () => void
+  let releaseRemoval!: () => void
+  const removalStarted = new Promise<void>((resolve) => {
+    announceRemoval = resolve
+  })
+  const removalGate = new Promise<void>((resolve) => {
+    releaseRemoval = resolve
+  })
+  const runGh: GhRunner = async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return payload({ labels: ["ready-for-human-review"] })
+    }
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({ state: "open", merged: false, title: "test PR 42", head: { sha: "head-42" } })
+    }
+    if (args.includes("DELETE")) {
+      announceRemoval()
+      await removalGate
+      return ""
+    }
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({
+    runGh,
+    loadConfig: async () => config({ autoMerge: true }),
+    log: () => {},
+    schedule: timers.schedule,
+    cancel: timers.cancel,
+  })
+
+  const starting = session.execute({
+    action: MonitorAction.start,
+    pr: "sesori/example#42",
+    start: startOptions(channel),
+  })
+  await removalStarted
+  let cleanupSettled = false
+  const cleanup = session.stopAll({}).then(() => {
+    cleanupSettled = true
+  })
+  await Promise.resolve()
+
+  assert.equal(cleanupSettled, false)
+  releaseRemoval()
+  await cleanup
+  const result = await starting
+  assert.match(result.text, /session ended while .* was starting/)
+  assert.equal(session.list().length, 0)
+  assert.equal(timers.timers.length, 0)
+})
+
+test("startup reset rejection drains without rejecting session cleanup", async () => {
+  const timers = timerHarness()
+  const channel = channelHarness()
+  let announceRemoval!: () => void
+  let releaseRemoval!: () => void
+  const removalStarted = new Promise<void>((resolve) => {
+    announceRemoval = resolve
+  })
+  const removalGate = new Promise<void>((resolve) => {
+    releaseRemoval = resolve
+  })
+  const runGh: GhRunner = async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return payload({ labels: ["ready-for-human-review"] })
+    }
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({ state: "open", merged: false, title: "test PR 42", head: { sha: "head-42" } })
+    }
+    if (args.includes("DELETE")) {
+      announceRemoval()
+      await removalGate
+      throw new Error("label removal denied")
+    }
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({
+    runGh,
+    loadConfig: async () => config({ autoMerge: true }),
+    log: () => {},
+    schedule: timers.schedule,
+    cancel: timers.cancel,
+  })
+
+  const starting = session.execute({
+    action: MonitorAction.start,
+    pr: "sesori/example#42",
+    start: startOptions(channel),
+  })
+  await removalStarted
+  const cleanup = session.stopAll({})
+  releaseRemoval()
+
+  await assert.doesNotReject(cleanup)
+  const result = await starting
+  assert.match(result.text, /pre-existing ready label .* could not be removed/)
+  assert.match(result.text, /label removal denied/)
+  assert.equal(session.list().length, 0)
+})
+
 test("session cleanup keeps a stopped watch registered until its label mutation drains", async () => {
   const runner = runnerHarness()
   const timers = timerHarness()
@@ -680,6 +785,116 @@ test("standalone mark_ready auto-merges the captured head", async () => {
   assert.equal(mergeCall?.includes("sha=standalone-head"), true)
   assert.equal(mergeCall?.includes("commit_title=Standalone title"), true)
   assert.equal(mergeCall?.includes("commit_message="), true)
+})
+
+test("standalone mark_ready withdraws readiness when the head changes while labeling", async () => {
+  const calls: string[][] = []
+  let pullRequestReads = 0
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      pullRequestReads += 1
+      const headSha = pullRequestReads >= 3 ? "replacement-head" : "accepted-head"
+      return JSON.stringify({ state: "open", merged: false, title: "Standalone title", head: { sha: headSha } })
+    }
+    if (route.endsWith("/pulls/42/merge")) return JSON.stringify({ merged: true })
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /Auto-merge canceled/)
+  assert.match(marked.text, /changed from accepted-head to replacement-head/)
+  assert.match(marked.text, /no longer flagged for human review/)
+  assert.equal(marked.ready?.ready, false)
+  assert.equal(calls.some((args) => args.some((arg) => arg.endsWith("/pulls/42/merge"))), false)
+  assert.equal(calls.some((args) => args.includes("DELETE")), true)
+})
+
+test("standalone mark_ready withdraws readiness when the fenced merge observes a later push", async () => {
+  const calls: string[][] = []
+  let pullRequestReads = 0
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      pullRequestReads += 1
+      const headSha = pullRequestReads >= 4 ? "replacement-head" : "accepted-head"
+      return JSON.stringify({ state: "open", merged: false, title: "Standalone title", head: { sha: headSha } })
+    }
+    if (route.endsWith("/pulls/42/merge")) throw new Error("head changed during merge")
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /Auto-merge canceled/)
+  assert.match(marked.text, /changed from accepted-head to replacement-head/)
+  assert.match(marked.text, /no longer flagged for human review/)
+  assert.equal(marked.ready?.ready, false)
+  assert.equal(calls.some((args) => args.includes("DELETE")), true)
+})
+
+test("failed standalone safety withdrawal reports the still-present ready state", async () => {
+  let pullRequestReads = 0
+  const runGh: GhRunner = async (args) => {
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      pullRequestReads += 1
+      const headSha = pullRequestReads >= 3 ? "replacement-head" : "accepted-head"
+      return JSON.stringify({ state: "open", merged: false, title: "Standalone title", head: { sha: headSha } })
+    }
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels") && args.includes("DELETE")) {
+      throw new Error("label removal denied")
+    }
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /Auto-merge canceled/)
+  assert.match(marked.text, /label .* could not be removed/)
+  assert.match(marked.text, /label removal denied/)
+  assert.equal(marked.ready?.ready, true)
+})
+
+test("standalone indeterminate merge retains readiness without retrying", async () => {
+  const calls: string[][] = []
+  const runGh: GhRunner = async (args) => {
+    calls.push(args)
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({
+        state: "open",
+        merged: false,
+        title: "Standalone title",
+        head: { sha: "standalone-head" },
+      })
+    }
+    if (route.endsWith("/pulls/42/merge")) return "not-json"
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route.includes("/issues/42/labels")) return ""
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config({ autoMerge: true }), log: () => {} })
+
+  const marked = await session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+
+  assert.match(marked.text, /outcome is unknown/)
+  assert.match(marked.text, /ready label remains and no automatic retry/)
+  assert.equal(marked.ready?.ready, true)
+  assert.equal(calls.filter((args) => args.some((arg) => arg.endsWith("/pulls/42/merge"))).length, 1)
+  assert.equal(calls.some((args) => args.includes("DELETE")), false)
 })
 
 test("standalone merge rejection keeps the ready result and does not add the marker", async () => {

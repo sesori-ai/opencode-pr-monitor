@@ -14,6 +14,6 @@ PR to mark: $ARGUMENTS
 
 If no PR was given above, resolve the current branch's open PR with `gh pr view --json url -q .url` and mark that one. The pr argument passed to the tool must be explicit — `owner/repo#123` or a full PR URL.
 
-Briefly confirm the exact tool result. Never issue a duplicate merge after `Auto-merge succeeded`. An auto-merge
-failure leaves the ready label present and is not retried automatically; inspect the reason before choosing whether
-a later explicit `mark_ready` attempt is warranted.
+Briefly confirm the exact tool result. Never issue a duplicate merge after `Auto-merge succeeded`. A rejected or
+unknown outcome leaves the ready label present and is not retried automatically; a changed head cancels standalone
+readiness. Inspect the result before choosing whether a later explicit `mark_ready` attempt is warranted.

@@ -289,21 +289,24 @@ When enabled:
   label added externally—or after a failed/ambiguous label mutation—does not merge.
 - Starting a monitor on an open PR that already carries `readyLabel` removes that label before the watch starts.
   The start result and, when `announceOnStart` is enabled, initial report say it was cleared and require the agent
-  to reassess the current head and call `mark_ready` again if appropriate. Startup never merges from stale handoff
-  state.
+  to reassess the current head and call `mark_ready` again if appropriate. Session cleanup drains this reset before
+  a reloaded successor can mutate the PR.
+- A standalone `mark_ready` captures the head before applying the label and revalidates it afterward. If the head
+  changed—or cannot be revalidated safely—the merge is canceled and the monitor attempts to withdraw readiness.
 - The merge request is fenced to the accepted head SHA. The squash commit title is the current PR title and its
-  commit-message body is explicitly empty.
+  commit-message body is explicitly empty. If the request response is lost or malformed, the monitor re-queries the
+  PR: a merged matching head is success; an unproven outcome is reported as unknown without another attempt.
 - A successful merge dynamically creates and applies the blue `automatically-merged` label. Failure to apply this
   marker cannot undo a completed merge and is reported as a warning.
-- A rejected merge leaves `readyLabel` in place, reports the failure, and is not retried automatically while that
-  readiness state remains unchanged. A later new readiness transition, or an explicit later `mark_ready`, is a new
-  attempt.
+- A rejected or unknown merge leaves `readyLabel` in place, reports the outcome, and is not retried automatically
+  while that readiness state remains unchanged. A changed head invalidates standalone readiness instead. A later
+  new readiness transition, or an explicit later `mark_ready`, is a new attempt.
 
 ## Configuration
 
 Global config for every host lives at `~/.config/pr-monitor/config.json` (or under an absolute
-`XDG_CONFIG_HOME`). Optional
-project config uses `.pr-monitor.json`; Claude Code falls back to `.claude/pr-monitor.json` then
+`XDG_CONFIG_HOME`). Optional project config uses `.pr-monitor.json`; Claude Code falls back to
+`.claude/pr-monitor.json` then
 `.opencode/pr-monitor.json`; OpenCode falls back to `.opencode/pr-monitor.json`; Hermes falls back to
 `.hermes/pr-monitor.json` then `.opencode/pr-monitor.json`; Pi/OMP use their `CONFIG_DIR_NAME` (`.pi`/`.omp`) before
 `.opencode/pr-monitor.json`. Pi reads project-local config only after project trust.

@@ -10,13 +10,6 @@ const READY_LABEL_COLOR = "0e8a16" // GitHub's standard green
 const READY_LABEL_DESCRIPTION = "This PR is ready for human review"
 
 /**
- * Adds `label` to the PR, creating the label in the repo first (green, with a
- * description) if it does not exist yet. Idempotent: adding an already-present
- * label succeeds and keeps the repo's existing label definition. Returns a
- * factual result line; throws when the target is not an open PR or the add
- * fails.
- */
-/**
  * Verify the target is an actual OPEN pull request. The labels endpoints
  * operate on the shared issue namespace, so without this check a plain issue
  * number — or a merged/closed PR — would be silently (un)labeled and reported
@@ -55,6 +48,13 @@ export async function getOpenPullRequest({
   }
 }
 
+/**
+ * Adds `label` to the PR, creating the label in the repo first (green, with a
+ * description) if it does not exist yet. Idempotent: adding an already-present
+ * label succeeds and keeps the repo's existing label definition. Returns a
+ * factual result line; throws when the target is not an open PR or the add
+ * fails.
+ */
 export async function markReadyForHumanReview(runGh: GhRunner, target: Target, label: string): Promise<string> {
   const repo = `repos/${target.owner}/${target.repo}`
   await getOpenPullRequest({ runGh, target })

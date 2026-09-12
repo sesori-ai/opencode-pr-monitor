@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.config/pr-monitor/config.json` through trusted project config, with an explicit
   `SESORI_PR_MONITOR_AUTO_MERGE` environment value taking final precedence. Automatic readiness and `mark_ready`
   retain the ready label, then make one head-fenced squash merge whose commit uses only the PR title. Successful
-  merges receive a dynamically created `automatically-merged` label; merge rejection keeps readiness and is not
-  retried automatically. With this mode enabled, startup clears a pre-existing ready label and requires fresh agent
-  assessment before any merge attempt.
+  merges receive a dynamically created `automatically-merged` label; rejected or unknown outcomes keep readiness
+  and are not retried automatically. Lost or malformed merge responses are reconciled against the accepted head.
+  With this mode enabled, startup clears a pre-existing ready label behind the lifecycle cleanup barrier. Standalone
+  readiness withdrawal is attempted if its accepted head changes before GitHub confirms the merge; cleanup failure
+  is surfaced without falsely reporting the label absent.
 - User-global monitor config now supplies all settings beneath project-specific overrides; an absolute
   `XDG_CONFIG_HOME` changes its root when set.
 

@@ -89,9 +89,10 @@ creating sleeps or polling loops.
   An unchanged unresolved-thread count does not mean there is no new feedback.
 - Fetch bodies for new review summaries and issue comments; reports omit them.
 - Treat a local-account, unprefixed comment as a human instruction.
-- For an auto-merge failure, keep in mind that the ready label remains and the
-  unchanged readiness state is not retried. Inspect the reason, address any
-  blocker, then use `mark_ready` only when an explicit new attempt is warranted.
+- For an auto-merge rejection or unknown outcome, the ready label remains and
+  unchanged readiness is not retried. A changed head instead cancels standalone
+  readiness. Inspect the result, address any blocker, then use `mark_ready` only
+  when an explicit new attempt is warranted.
 - A merged/closed report is terminal; the monitor stopped itself.
 
 When feedback needs a response, begin the GitHub reply with the configured

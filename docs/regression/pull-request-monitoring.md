@@ -78,12 +78,18 @@ host loaders, authenticated GitHub state, and ready-label mutation.
 - Only successfully completed readiness transitions performed by the monitor and successful `mark_ready` actions
   trigger one merge attempt. Observing an externally added ready label does not; neither does observing readiness
   after a failed/ambiguous label mutation. Both watched and standalone `mark_ready` are covered.
-- The ready label is applied first. The squash merge is fenced to the accepted head SHA, uses the current PR title as
-  `commit_title`, and sends an explicitly empty `commit_message`; PR body text is never copied into the commit body.
+- The ready label is applied first. Standalone `mark_ready` captures the head before labeling and revalidates it
+  afterward; a changed or unverifiable head cancels the merge and triggers best-effort ready-label withdrawal. The
+  squash merge is fenced to the accepted head SHA, uses the current PR title as `commit_title`, and sends an
+  explicitly empty `commit_message`; PR body text is never copied into the commit body.
 - A successful merge best-effort creates and applies the fixed blue `automatically-merged` label. Failure to add that
   marker is reported without misreporting or attempting to undo the completed merge.
-- A rejected merge leaves readiness present, reports that no automatic retry will occur, and does not retry while
-  that readiness state stays unchanged. A later readiness transition or explicit `mark_ready` is a new attempt.
+- A lost, rejected, or malformed merge response never triggers a blind retry. An indeterminate request is followed
+  by one PR-state query: a matching merged head is reported as success, a changed open head invalidates standalone
+  readiness, and any other unproven outcome is reported as unknown. Definitive rejection and unknown outcome leave
+  readiness present. A later readiness transition or explicit `mark_ready` is a new attempt.
+- A manual ready action clears an undelivered automatic-attempt notice so later reports cannot describe an obsolete
+  failure after the manual attempt succeeds.
 - Reports, start results, status, tool wording, commands, and shipped skills expose enabled state and its irreversible
   consequence. Every host uses the same layered config resolver and core/runtime implementation.
 
@@ -93,7 +99,8 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   an open PR carrying the ready label has that label removed before watch registration; start fails if removal cannot
   be confirmed. The start result and, when announcements are enabled, initial report identify the reset and require
   fresh assessment plus an explicit `mark_ready` if the PR is ready. When startup announcements are disabled, the
-  start result remains the notice. Startup never merges merely from stale or externally observed label state.
+  start result remains the notice. Startup never merges merely from stale or externally observed label state. The
+  reset is lifecycle-owned work that session cleanup drains before a reloaded successor may mutate the same PR.
 - Unchanged polls or a flush of unchanged initial state do not add the label. Later observed CI completion and
   feedback handling retain automatic readiness, including when that activity arrives before a failed initial
   delivery is retried or manually flushed.

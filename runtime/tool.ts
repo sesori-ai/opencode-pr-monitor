@@ -48,9 +48,9 @@ export function buildMonitorToolDescription({
     "after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current " +
     "state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a " +
     "later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also " +
-    "make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness " +
-    "and is not retried " +
-    "automatically. Ready actions do not require an active monitor. The PR must be `owner/repo#123` or a " +
+    "make one squash-merge attempt for the accepted head using only the PR title; rejected or unknown outcomes " +
+    "keep readiness and are not retried automatically, while a changed head cancels standalone readiness. " +
+    "Ready actions do not require an active monitor. The PR must be `owner/repo#123` or a " +
     `full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ` +
     `~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE ` +
     `environment value overrides autoMerge config. ${lifecycle}`

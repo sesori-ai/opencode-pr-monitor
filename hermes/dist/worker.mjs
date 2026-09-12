@@ -509,10 +509,32 @@ async function removeReadyForHumanReview(runGh, target, label) {
 var AUTO_MERGED_LABEL = "automatically-merged";
 var AUTO_MERGED_LABEL_COLOR = "1d76db";
 var AUTO_MERGED_LABEL_DESCRIPTION = "Merged automatically by Sesori PR Monitor";
+var AutoMergeHeadChangedError = class extends Error {
+  expectedHeadSha;
+  actualHeadSha;
+  constructor({ expectedHeadSha, actualHeadSha }) {
+    super(`the PR head changed from ${expectedHeadSha} to ${actualHeadSha} before GitHub confirmed the merge`);
+    this.name = "AutoMergeHeadChangedError";
+    this.expectedHeadSha = expectedHeadSha;
+    this.actualHeadSha = actualHeadSha;
+  }
+};
+var AutoMergeOutcomeUnknownError = class extends Error {
+  constructor({ message }) {
+    super(message);
+    this.name = "AutoMergeOutcomeUnknownError";
+  }
+};
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function autoMergeFailureText({ error }) {
+  if (error instanceof AutoMergeOutcomeUnknownError) {
+    return `Auto-merge outcome is unknown after the ready label was added; the ready label remains and no automatic retry will occur: ${error.message}`;
+  }
+  if (error instanceof AutoMergeHeadChangedError) {
+    return `Auto-merge was canceled because the accepted head changed; the monitor will reassess readiness on its next poll: ${error.message}`;
+  }
   return "Auto-merge failed after the ready label was added; the ready label remains and no automatic retry will occur: " + errorMessage(error);
 }
 async function getAutoMergePullRequest({
@@ -524,6 +546,20 @@ async function getAutoMergePullRequest({
     throw new Error("GitHub's pull-request response did not include the title and head SHA required for auto-merge.");
   }
   return { title: pullRequest.title, headSha: pullRequest.headSha };
+}
+async function getPullRequestMergeState({
+  runGh,
+  target
+}) {
+  const repo = `repos/${target.owner}/${target.repo}`;
+  const raw = await runGh(["api", `${repo}/pulls/${target.number}`]);
+  const pullRequest = JSON.parse(raw);
+  const merged = pullRequest.merged === true;
+  const state = merged ? "MERGED" : pullRequest.state === "open" ? "OPEN" : pullRequest.state === "closed" ? "CLOSED" : "UNKNOWN";
+  return {
+    state,
+    headSha: typeof pullRequest.head?.sha === "string" ? pullRequest.head.sha : void 0
+  };
 }
 async function addAutoMergedLabel({ runGh, target }) {
   const repo = `repos/${target.owner}/${target.repo}`;
@@ -542,6 +578,47 @@ async function addAutoMergedLabel({ runGh, target }) {
   }
   await runGh(["api", `${repo}/issues/${target.number}/labels`, "-f", `labels[]=${AUTO_MERGED_LABEL}`]);
 }
+async function successfulMergeText({
+  runGh,
+  target,
+  pullRequest
+}) {
+  const merged = `Auto-merge succeeded: squash-merged ${targetKey(target)} at ${pullRequest.headSha} using only the PR title.`;
+  try {
+    await addAutoMergedLabel({ runGh, target });
+    return `${merged} Label "${AUTO_MERGED_LABEL}" added.`;
+  } catch (error) {
+    return `${merged} Warning: could not add label "${AUTO_MERGED_LABEL}": ${errorMessage(error)}`;
+  }
+}
+async function reconcileIndeterminateMerge({
+  runGh,
+  target,
+  pullRequest,
+  cause
+}) {
+  let observed;
+  try {
+    observed = await getPullRequestMergeState({ runGh, target });
+  } catch (reconciliationError) {
+    throw new AutoMergeOutcomeUnknownError({
+      message: `the merge request did not return a usable result (${errorMessage(cause)}), and the follow-up PR query failed (${errorMessage(reconciliationError)})`
+    });
+  }
+  if (observed.state === "MERGED" && observed.headSha === pullRequest.headSha) {
+    return await successfulMergeText({ runGh, target, pullRequest });
+  }
+  if (observed.state === "OPEN" && observed.headSha !== void 0 && observed.headSha !== pullRequest.headSha) {
+    throw new AutoMergeHeadChangedError({
+      expectedHeadSha: pullRequest.headSha,
+      actualHeadSha: observed.headSha
+    });
+  }
+  const observedHead = observed.headSha === void 0 ? "unknown head" : `head ${observed.headSha}`;
+  throw new AutoMergeOutcomeUnknownError({
+    message: `the merge request did not return a usable result (${errorMessage(cause)}); the follow-up PR query observed ${observed.state} at ${observedHead}, so the accepted head could not be confirmed as merged`
+  });
+}
 async function squashMergePullRequest({
   runGh,
   target,
@@ -551,37 +628,36 @@ async function squashMergePullRequest({
     throw new Error("Auto-merge requires a non-empty PR title and head SHA.");
   }
   const repo = `repos/${target.owner}/${target.repo}`;
-  const raw = await runGh([
-    "api",
-    "--method",
-    "PUT",
-    `${repo}/pulls/${target.number}/merge`,
-    "-f",
-    "merge_method=squash",
-    "-f",
-    `sha=${pullRequest.headSha}`,
-    "-f",
-    `commit_title=${pullRequest.title}`,
-    "-f",
-    "commit_message="
-  ]);
+  let raw;
+  try {
+    raw = await runGh([
+      "api",
+      "--method",
+      "PUT",
+      `${repo}/pulls/${target.number}/merge`,
+      "-f",
+      "merge_method=squash",
+      "-f",
+      `sha=${pullRequest.headSha}`,
+      "-f",
+      `commit_title=${pullRequest.title}`,
+      "-f",
+      "commit_message="
+    ]);
+  } catch (error) {
+    return await reconcileIndeterminateMerge({ runGh, target, pullRequest, cause: error });
+  }
   let result;
   try {
     result = JSON.parse(raw);
-  } catch {
-    throw new Error("GitHub returned an invalid response to the squash-merge request.");
+  } catch (error) {
+    return await reconcileIndeterminateMerge({ runGh, target, pullRequest, cause: error });
   }
   if (result.merged !== true) {
     const detail = typeof result.message === "string" && result.message.length > 0 ? result.message : "GitHub did not confirm the merge.";
     throw new Error(detail);
   }
-  const merged = `Auto-merge succeeded: squash-merged ${targetKey(target)} at ${pullRequest.headSha} using only the PR title.`;
-  try {
-    await addAutoMergedLabel({ runGh, target });
-    return `${merged} Label "${AUTO_MERGED_LABEL}" added.`;
-  } catch (error) {
-    return `${merged} Warning: could not add label "${AUTO_MERGED_LABEL}": ${errorMessage(error)}`;
-  }
+  return await successfulMergeText({ runGh, target, pullRequest });
 }
 
 // core/activity.ts
@@ -948,7 +1024,8 @@ var PrWatch = class {
   readinessError;
   reportedReadinessError;
   // One-shot result from an automatic readiness-triggered merge attempt. It is
-  // retained across delivery failure, then cleared after successful delivery.
+  // retained across delivery failure, then cleared by delivery or a superseding
+  // manual readiness action.
   autoMergeNotice;
   // A poll may observe new feedback and a prefixed response together. The
   // ready label is still withdrawn and reported first; only a later quiet
@@ -1026,6 +1103,7 @@ var PrWatch = class {
       if (readiness === void 0 || snapshot === void 0) {
         throw new Error("this watch does not have a readiness channel");
       }
+      this.autoMergeNotice = void 0;
       return await this.trackReadinessMutation(async () => {
         let text = await readiness.change(ready);
         this.snapshot = withReadyLabel(snapshot, readiness.label, ready);
@@ -1524,13 +1602,16 @@ function buildMonitorToolDescription({
   lifecycle,
   waiting
 }) {
-  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when autoMerge is enabled by trusted config or SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; merge failure keeps readiness and is not retried automatically. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE environment value overrides autoMerge config. ${lifecycle}`;
+  return `Monitor a GitHub PR in the background. Detects head changes, CI conclusions, reviews, inline/issue comments (including follow-ups on existing or resolved threads), mergeability changes, and merge/close. Activity is aggregated with a rolling debounce; ${delivery} Reports never include comment bodies. Every report states whether the configured ready label is present and tells the agent to keep working or manually mark ready when judgment says no action remains. Startup reports normally observe the existing label; when autoMerge is enabled by trusted config or SESORI_PR_MONITOR_AUTO_MERGE=true, start removes a pre-existing ready label and requires fresh assessment. Assess current-head checks, automated reviews and feedback immediately, including after restarting a monitor. Mark an already-settled PR ready without waiting for a new event, but never infer readiness from empty results after creation or a fresh push. On later activity, the monitor automatically adds readiness when CI is passing (or absent), mergeability is definite, and every feedback channel ends in a correctly prefixed local-account reply. It withdraws readiness on later commits, relevant comments, CI regression, or conflict. A newly failing check (when flushOnCiFailure is enabled), readiness withdrawal, merge conflict, or terminal state skips debounce. The monitor owns all polling and notifications arrive automatically. NEVER create sleeps, delayed or scheduled jobs, background polling loops, repeated \`gh pr checks\`, or routine status/flush calls while waiting. ${waiting} Actions: start (watch one PR), stop (stop one or all), flush (on-demand full report; never routine after a delivered report), status (list this session's monitors), mark_ready (unconditionally accept current state and add the configured ready label), and unmark_ready (remove it now; automation may restore it after a later clean assessment). With autoMerge enabled, automatic readiness and mark_ready also make one squash-merge attempt for the accepted head using only the PR title; rejected or unknown outcomes keep readiness and are not retried automatically, while a changed head cancels standalone readiness. Ready actions do not require an active monitor. The PR must be \`owner/repo#123\` or a full URL; \`all\` is allowed only for stop/flush. Global tuning lives in ~/.config/pr-monitor/config.json; ${configPath} overrides it. An explicit SESORI_PR_MONITOR_AUTO_MERGE environment value overrides autoMerge config. ${lifecycle}`;
 }
 
 // runtime/monitor-session.ts
 var MonitorSession = class {
   deps;
   watches = /* @__PURE__ */ new Map();
+  // Destructive startup work happens before a watch can own the target. Keep
+  // it in the session cleanup barrier so a reloaded successor cannot race it.
+  startupMutations = /* @__PURE__ */ new Set();
   lifecycleGeneration = 0;
   selfLogin;
   selfLoginPromise;
@@ -1543,6 +1624,16 @@ var MonitorSession = class {
         clearInterval(timer);
       })
     };
+  }
+  trackStartupMutation({ mutation }) {
+    const operation = Promise.resolve().then(mutation);
+    const barrier = operation.then(
+      () => void 0,
+      () => void 0
+    );
+    this.startupMutations.add(barrier);
+    void barrier.then(() => this.startupMutations.delete(barrier));
+    return operation;
   }
   list() {
     return [...this.watches.values()].map(({ watch, config }) => ({
@@ -1591,8 +1682,12 @@ var MonitorSession = class {
   }) {
     this.lifecycleGeneration += 1;
     const entries = [...this.watches.values()];
+    const startupMutations = [...this.startupMutations];
     for (const entry of entries) entry.watch.stop();
-    await Promise.all(entries.map((entry) => entry.watch.waitUntilStopped()));
+    await Promise.all([
+      ...entries.map((entry) => entry.watch.waitUntilStopped()),
+      ...startupMutations
+    ]);
     if (notice === void 0) return;
     await Promise.all(
       entries.map(async (entry) => {
@@ -1658,7 +1753,9 @@ ${raced.watch.statusLine()}` };
     let startupNotice;
     if (config.autoMerge && hasReadyLabel(initial, config.readyLabel)) {
       try {
-        await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel);
+        await this.trackStartupMutation({
+          mutation: () => removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel)
+        });
       } catch (error) {
         return {
           text: `Cannot start monitor for ${displayKey}: auto-merge is enabled but the pre-existing ready label "${config.readyLabel}" could not be removed (${error.message}).`
@@ -1805,24 +1902,81 @@ ${resetRace.watch.statusLine()}` };
         };
       }
       const config = await loadConfig();
-      const pullRequest = ready && config.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
+      const acceptedPullRequest = ready && config.autoMerge ? await getAutoMergePullRequest({ runGh: this.deps.runGh, target }) : void 0;
+      let effectiveReady = ready;
       let text = ready ? await markReadyForHumanReview(this.deps.runGh, target, config.readyLabel) : await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel);
-      if (pullRequest !== void 0) {
+      if (acceptedPullRequest !== void 0) {
+        let revalidatedPullRequest;
         try {
-          text += `
-${await squashMergePullRequest({ runGh: this.deps.runGh, target, pullRequest })}`;
+          revalidatedPullRequest = await getAutoMergePullRequest({ runGh: this.deps.runGh, target });
         } catch (error) {
-          const failure = autoMergeFailureText({ error });
-          this.deps.log(`auto-merge failed for ${displayKey}: ${error}`);
+          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+            target,
+            config,
+            reason: `the accepted head could not be revalidated after labeling (${error instanceof Error ? error.message : String(error)})`
+          });
+          effectiveReady = !withdrawal.removed;
           text += `
+${withdrawal.text}`;
+        }
+        if (revalidatedPullRequest !== void 0 && revalidatedPullRequest.headSha !== acceptedPullRequest.headSha) {
+          const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+            target,
+            config,
+            reason: `the PR head changed from ${acceptedPullRequest.headSha} to ${revalidatedPullRequest.headSha} while readiness was being applied`
+          });
+          effectiveReady = !withdrawal.removed;
+          text += `
+${withdrawal.text}`;
+        } else if (revalidatedPullRequest !== void 0) {
+          try {
+            text += `
+${await squashMergePullRequest({
+              runGh: this.deps.runGh,
+              target,
+              pullRequest: revalidatedPullRequest
+            })}`;
+          } catch (error) {
+            if (error instanceof AutoMergeHeadChangedError) {
+              const withdrawal = await this.withdrawUnsafeStandaloneReadiness({
+                target,
+                config,
+                reason: error.message
+              });
+              effectiveReady = !withdrawal.removed;
+              text += `
+${withdrawal.text}`;
+            } else {
+              const failure = autoMergeFailureText({ error });
+              this.deps.log(`auto-merge failed for ${displayKey}: ${error}`);
+              text += `
 ${failure}`;
+            }
+          }
         }
       }
-      this.notifyReadyChanged({ target, ready, watched: false, config });
-      return { text, ready: { target, ready, watched: false } };
+      this.notifyReadyChanged({ target, ready: effectiveReady, watched: false, config });
+      return { text, ready: { target, ready: effectiveReady, watched: false } };
     } catch (error) {
       const action = ready ? `mark ${displayKey} as ready for human review` : `withdraw the ready-for-human-review label from ${displayKey}`;
       return { text: `Cannot ${action}: ${error.message}` };
+    }
+  }
+  async withdrawUnsafeStandaloneReadiness({
+    target,
+    config,
+    reason
+  }) {
+    const canceled = `Auto-merge canceled because ${reason}.`;
+    try {
+      const removed = await removeReadyForHumanReview(this.deps.runGh, target, config.readyLabel);
+      return { text: `${canceled} ${removed}`, removed: true };
+    } catch (error) {
+      this.deps.log(`unsafe standalone readiness cleanup failed for ${targetKey(target)}: ${error}`);
+      return {
+        text: `${canceled} WARNING: label "${config.readyLabel}" could not be removed (${error instanceof Error ? error.message : String(error)}); remove it manually before reassessing the PR.`,
+        removed: false
+      };
     }
   }
   fetchSnapshot({ target, config }) {
