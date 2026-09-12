@@ -139,7 +139,7 @@ The `pr_monitor` tool is the same on every host:
 
 | Action | Target | What it does |
 |---|---|---|
-| `start` | one PR | Start watching and report the current state. |
+| `start` | one PR | Start watching and, unless `announceOnStart` is off, report the current state. |
 | `stop` | one PR or `all` | Stop watching. |
 | `flush` | one PR or `all` | Send a full report right now. |
 | `status` | none | List the monitors this conversation owns. |

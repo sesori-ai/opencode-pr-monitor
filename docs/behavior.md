@@ -13,7 +13,7 @@ review threads, or labels overflow the first page.
 These count as activity:
 
 - a new head commit;
-- the PR state changing, or mergeability settling on a definite value;
+- the PR state changing, or mergeability changing from its last definite value;
 - a new or changed review, or a new review summary;
 - a relevant inline or issue comment;
 - a review thread being resolved or unresolved; and
@@ -86,8 +86,8 @@ PR Monitor adds the ready label on its own when all three hold:
 2. GitHub reports the PR as `MERGEABLE`; and
 3. every feedback channel ends with a valid prefixed reply.
 
-A new commit, a relevant comment or review summary, an edited or deleted reply, a CI failure, or a conflict takes the
-label off again. Thread resolution, stale reviews, pending reviewers, draft status, and the PR being merged or closed
+A new commit, a relevant comment or review summary, an edited or deleted reply, a later CI failure, or a conflict
+takes the label off again. A check that was already failing when `mark_ready` accepted the PR does not. Thread resolution, stale reviews, pending reviewers, draft status, and the PR being merged or closed
 do not take it off on their own.
 
 When a monitor starts, it notes an existing ready label but does not re-add one. The agent has to look at the first
