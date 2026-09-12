@@ -110,10 +110,10 @@ package.json
 skills/monitor-pr/SKILL.md
 ```
 
-- Runtime exports are exactly `name`, `inject`, and `apply`; declarations are generated from that source and expose
-  the same API. Host SDK imports stay external as `"*"` peers while build-time declarations stay pinned to the
-  supported floor. Harness resolves those peers through its profile loader; making `dsh-tools` a local dependency
-  risks a duplicate scheduler-symbol realm.
+- Runtime exports are exactly `name`, `inject`, and `apply`; `deepseek/tsconfig.build.json` scopes declaration
+  generation to that source entry and its reachable graph. Host SDK imports stay external as `"*"` peers while
+  build-time declarations stay pinned to the supported floor. Harness resolves those peers through its profile
+  loader; making `dsh-tools` a local dependency risks a duplicate scheduler-symbol realm.
 - `package.json#dsh.bundle.patch` points to `cordis.patch.yml`, which inserts exactly one
   `@sesori/pr-monitor-deepseek` plugin into the selected profile. DeepSeek does not convention-scan plugin folders.
 - `ctx.skills.registerProvider()` publishes the canonical skill at `BUNDLED_SKILL_RANK`; copied content must exactly

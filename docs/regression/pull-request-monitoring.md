@@ -104,6 +104,8 @@ host loaders, authenticated GitHub state, and ready-label mutation.
   fresh assessment plus an explicit `mark_ready` if the PR is ready. When startup announcements are disabled, the
   start result remains the notice. Startup never merges merely from stale or externally observed label state. The
   reset is lifecycle-owned work that session cleanup drains before a reloaded successor may mutate the same PR.
+  Cleanup also drains standalone `mark_ready` and `unmark_ready` operations, including an auto-merge attempt, before
+  a successor session can expose another mutation path.
 - Unchanged polls or a flush of unchanged initial state do not add the label. Later observed CI completion and
   feedback handling retain automatic readiness, including when that activity arrives before a failed initial
   delivery is retried or manually flushed.
@@ -275,7 +277,7 @@ reconciliation, cleanup failure, and marker-label failure.
   failure removes readiness; stale standalone authorization remains ready without a surfaced cleanup attempt; or
   marker failure falsely reports a successful merge as failed.
 - A canceled session transition loses a watch, a successful transition retains an old timer, or an old session
-  delivers into/removes readiness from a successor watch.
+  delivers into/removes readiness from a successor watch or overlaps its standalone readiness mutation.
 - An agent creates a second wait/poll mechanism, Pi/OMP/DeepSeek fails to trigger an idle turn, DeepSeek registers a
   child-Agent monitor or retargets a same-ID replacement, or a host discovers duplicate `monitor-pr` skills.
 

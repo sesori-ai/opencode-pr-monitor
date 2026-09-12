@@ -46,6 +46,7 @@ deepseek/            # @sesori/pr-monitor-deepseek native Cordis bundle.
   index.ts     # Sole public package entry: name, inject, apply.
   extension.ts # One MonitorSession/tool per exact root Agent; native steer delivery and bundled skill provider.
   cordis.patch.yml # dsh.bundle.patch inserts the plugin into a selected Harness profile.
+  tsconfig.build.json # Scopes declaration generation to the DeepSeek entry and its reachable graph.
   dist/        # Ephemeral npm bundle and declaration; ignored; never commit.
   skills/      # Generated monitor-pr skill copy; ignored; never commit.
 
@@ -140,7 +141,7 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
    - DeepSeek Harness (`deepseek/extension.ts`): each exact root `Agent` owns one runtime and tool in `agent.ctx`;
      `agent.steer(createUserMessage(...))` starts an idle turn or injects at a busy turn's next step boundary. Exact
      Agent object identity fences replacement conversations that reuse a session ID, and replacement registration
-     waits for the prior runtime's startup/readiness mutation cleanup barrier.
+     waits for the prior runtime's startup or watched/standalone readiness mutation cleanup barrier.
 
 ## Key behaviors / gotchas
 
@@ -158,8 +159,9 @@ Hermes plugin version is part of the lockstep release check. Rebuild and commit 
 - **Stop/mutation fencing** — a stopped watch rejects queued flush/ready actions and remains registered until an
   already-started readiness operation drains. An auto-merge already in flight drains; if stop wins while the label
   call is pending, `stopped` fences the not-yet-started follow-on merge. A pre-registration stale-label reset is
-  tracked separately in the session cleanup barrier so reload takeover awaits it. Cleanup does not await stalled
-  fetches or deliveries; `stopped`/generation checks fence their continuations before a successor is mutated.
+  tracked separately in the session cleanup barrier so reload takeover awaits it. Standalone `mark_ready` and
+  `unmark_ready` mutations use the same barrier because no watch owns them. Cleanup does not await stalled fetches
+  or deliveries; `stopped`/generation checks fence their continuations before a successor is mutated.
 - **Sessions, Claude Code shell**: one MCP server process per Claude Code process, so the watches map IS the session scope. Monitors survive `/clear` (same process) and die with the process. Spool routing: spool dirs are named by the owning Claude Code pid (= MCP server's ppid); the hook drains dirs named by its parent/grandparent pid (hook ← sh ← claude; deliberately NOT the full ancestry, which would let a nested claude session steal the outer session's reports) and GCs dead-pid dirs. Ancestry is read from `/proc` where it exists, else `ps`; with neither the hook drains **nothing** — the number of live spools is not evidence of ownership (a session with no monitor still fires hooks), so there is no cardinality trick that substitutes for real ancestry. A pid is not an identity either — the OS recycles them — so `claimSpool` records the Claude Code process's start time in `<spool dir>/owner` (tmp+rename; a torn read must not look like a foreign token) at server startup, and it is enforced in three places: the server discards anything it cannot prove it inherited before spooling (a foreign token *and* an untokened dir, since stamping the latter would launder a vanished session's reports); `spoolReport` re-checks the token before every write, so an orphaned server whose parent's pid got recycled cannot write into the newcomer's spool; the hook *skips* — never deletes — a dir whose token mismatches, because deleting would race the newcomer's `claimSpool`. On macOS the token is `ps -o lstart=` (1-second resolution), a deliberate residue: coarser than ideal, but calling macOS unverifiable would restore pid-only routing there, which is strictly worse. Report filenames carry the *server* pid too (`seq` restarts at 0 in each process while the dir outlives them, so an /mcp restart could otherwise collide within a millisecond and lose a report). Drains claim each report via unlink-before-emit so concurrent hook invocations never deliver one twice, and the script must not process.exit after writing (stdout past the 64KB pipe buffer would be truncated). PostToolUse also fires for tool calls inside Task subagents — those hook inputs carry `agent_id`, and drain-spool.mjs skips them so a report is never consumed by a subagent's context (verified empirically on Claude Code 2.1.216). Shutdown (stdin EOF/SIGTERM) spools a `Monitor stopped` notice per watch — delivered if the same process continues (server restart), silently GC'd if the session is gone.
 - **Reload takeover, opencode shell** — `globalThis.__sesoriPrMonitorTakeovers` kills zombie timers from prior plugin instances; old watches send one factual stop notice. (`session.deleted` stops matching watches silently.) Graceful `dispose` cannot use `promptAsync`: OpenCode acknowledges that endpoint before its fork persists the message, then disposal cancels the fork. Shutdown uses synchronous `session.prompt` with `noReply: true`, persisting each notice before disposal without starting a model turn.
 - **DeepSeek Harness lifecycle** — the native Cordis bundle listens for `agent/created`, ignores child Agents,

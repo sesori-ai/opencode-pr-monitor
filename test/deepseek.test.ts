@@ -54,8 +54,10 @@ function effectHarness() {
 
 function fakeDeepSeekHarness({
   launchEnvironment,
+  toolDisposeFailures,
 }: {
   launchEnvironment?: LaunchEnvironmentSnapshot
+  toolDisposeFailures?: ReadonlySet<string>
 } = {}) {
   const rootEffects = effectHarness()
   const roots: Agent[] = []
@@ -102,6 +104,7 @@ function fakeDeepSeekHarness({
           registeredTool = tool
           return () => {
             if (registeredTool === tool) registeredTool = undefined
+            if (toolDisposeFailures?.has(id) === true) throw new Error(`tool disposal failed for ${id}`)
           }
         },
       },
@@ -395,7 +398,7 @@ test("DeepSeek steers busy and idle reports into the exact owning conversation",
 })
 
 test("DeepSeek agent disposal fences old timers and same-id replacements", async () => {
-  const harness = fakeDeepSeekHarness()
+  const harness = fakeDeepSeekHarness({ toolDisposeFailures: new Set(["reused-id"]) })
   const timers = timerHarness()
   const runner = runnerHarness({ states: ["OPEN", "MERGED"] })
   let markMutationStarted!: () => void
@@ -421,7 +424,9 @@ test("DeepSeek agent disposal fences old timers and same-id replacements", async
       loadConfig: async () => monitorConfig({ announceOnStart: false }),
       schedule: timers.schedule,
       cancel: timers.cancel,
-      log: () => {},
+      log: (message) => {
+        if (message.startsWith("replacement cleanup failed")) throw new Error("logger failed")
+      },
     },
   })
   const original = harness.createAgent({ id: "reused-id" })
@@ -475,6 +480,65 @@ test("DeepSeek agent disposal fences old timers and same-id replacements", async
   )
 
   await controller.dispose()
+  await replacement.dispose()
+})
+
+test("DeepSeek same-id replacement waits for standalone readiness", async () => {
+  const harness = fakeDeepSeekHarness()
+  const runner = runnerHarness()
+  let labelMutationStarted!: () => void
+  let releaseLabelMutation!: () => void
+  const mutationStarted = new Promise<void>((resolve) => {
+    labelMutationStarted = resolve
+  })
+  const mutationGate = new Promise<void>((resolve) => {
+    releaseLabelMutation = resolve
+  })
+  const runGh: GhRunner = async (args) => {
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route.endsWith("/issues/42/labels") && !args.includes("DELETE")) {
+      labelMutationStarted()
+      await mutationGate
+    }
+    return await runner.runGh(args)
+  }
+  const controller = registerDeepSeekMonitor({
+    ctx: harness.ctx,
+    dependencies: {
+      runGh,
+      loadConfig: async () => monitorConfig({ autoMerge: false }),
+      log: () => {},
+    },
+  })
+  const original = harness.createAgent({ id: "standalone-reused-id" })
+  const originalTool = original.tool()
+  assert.ok(originalTool)
+  const markReady = executeTool({
+    tool: originalTool,
+    agent: original.agent,
+    action: MonitorAction.markReady,
+    pr: "sesori/example#42",
+  })
+  await mutationStarted
+
+  const replacement = harness.createAgent({ id: "standalone-reused-id" })
+  assert.equal(original.tool(), undefined)
+  assert.equal(replacement.tool(), undefined)
+  await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate))
+  assert.equal(replacement.tool(), undefined)
+
+  releaseLabelMutation()
+  assert.match(await markReady, /label "ready-for-human-review" added/)
+  await waitFor({ condition: () => replacement.tool() !== undefined })
+  const replacementTool = replacement.tool()
+  assert.ok(replacementTool)
+  assert.match(
+    await executeTool({ tool: replacementTool, agent: replacement.agent, action: MonitorAction.status }),
+    /No active monitors/,
+  )
+
+  await controller.dispose()
+  await original.dispose()
   await replacement.dispose()
 })
 

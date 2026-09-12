@@ -28,11 +28,7 @@ try {
     [
       fileURLToPath(new URL("../node_modules/typescript/bin/tsc", import.meta.url)),
       "--project",
-      fileURLToPath(new URL("../tsconfig.json", import.meta.url)),
-      "--declaration",
-      "--emitDeclarationOnly",
-      "--noEmit",
-      "false",
+      fileURLToPath(new URL("../deepseek/tsconfig.build.json", import.meta.url)),
       "--outDir",
       declarationDirectory,
     ],

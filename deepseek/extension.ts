@@ -307,8 +307,20 @@ export function registerDeepSeekMonitor({
   const pendingRegistrations = new Set<Promise<void>>()
   let stopping = false
   const warn = ({ message }: { message: string }): void => {
-    if (dependencies.log !== undefined) dependencies.log(message)
-    else ctx.logger.warn(`[pr-monitor] ${message}`)
+    if (dependencies.log !== undefined) {
+      try {
+        dependencies.log(message)
+        return
+      } catch {
+        // Fall through to the host logger. Cleanup and registration must not
+        // fail only because an injected observer threw.
+      }
+    }
+    try {
+      ctx.logger.warn(`[pr-monitor] ${message}`)
+    } catch {
+      // Logging is best effort at a lifecycle boundary.
+    }
   }
   const invokeCleanup = ({ cleanup }: { cleanup: OwnerCleanup }): Promise<void> => {
     try {

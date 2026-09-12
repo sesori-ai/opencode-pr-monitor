@@ -17,7 +17,7 @@ release 0.1.5-rc.2 on Node.js 22.19+. Recheck every public contract named below 
 | L2 | Configuration | Load user-global config and auto-merge environment values only from inherited-process or Harness-home user provenance; reject project config and invoking-project `.env` without a host trust signal. | `test/deepseek.test.ts` plus `deepseek/extension.ts` |
 | L2 | Skill API | Register exactly one canonical `monitor-pr` candidate at `BUNDLED_SKILL_RANK`; project and user providers can override it. Remove YAML frontmatter from returned content, instruct delegated children without the tool to hand ownership back to root, and dispose the provider on unload. | `test/deepseek.test.ts` and `scripts/check-pack.mjs` |
 | L2 | Automated | Shared polling, feedback, readiness, labels, error rollback, and auto-merge safety remain host-neutral. | `test/{core,runtime,merge,deepseek}.test.ts` |
-| L3 | Packaged bundle | npm archive has exact files, external host imports, source-generated declarations, sole public exports, copied canonical skill, `dsh.bundle.patch` metadata, and a patch inserting one plugin. Fresh consumer import and TypeScript compile pass. | Pass: 2026-09-12, `scripts/check-pack.mjs`, macOS / Node 22.23.2 |
+| L3 | Packaged bundle | npm archive has exact files, external host imports, declarations generated from a DeepSeek-scoped source graph, sole public exports, copied canonical skill, `dsh.bundle.patch` metadata, and a patch inserting one plugin. Fresh consumer import and TypeScript compile pass. | Pass: 2026-09-12, `scripts/check-pack.mjs`, macOS / Node 22.23.2 |
 | L3 | Actual host loader | `dsh plugin --profile web add` composes the packed bundle; `--dump-config` shows one plugin; full Web loader boot succeeds from the isolated profile. | Pass: 2026-09-12, Harness 0.1.5-rc.2 / Node 22.23.2 and 26.8.1 / macOS |
 | L3 | Actual root Agent | A real root Agent exposes one `pr_monitor` tool and one skill; delegated child Agents get no independent registration. | Partial: real Headless root registered/executed start and stop and advertised the skill; actual child Agent not run |
 | L3 | Model-driven host | A real Harness Agent starts a monitor and consumes a natively steered report. A Web conversation ends its turn and wakes for a later idle report without another user prompt. | Partial: controlled-provider Headless Agent consumed the busy initial report; delayed idle Web wake not run |
@@ -45,11 +45,11 @@ check, or configuration dump satisfies an actual-host/model-driven row.
 
 - `test/deepseek.test.ts` runs the real DeepSeek `defineTool()` argument wrapper against controlled Cordis/Agent
   services. It covers root-only registration, every action, skill rank/content, busy and idle steer delivery,
-  cross-conversation isolation, terminal reporting, Agent disposal, same-ID replacement behind an in-flight
-  readiness mutation, timer fencing, plugin cleanup, package metadata, peer ranges, global config, and project-`.env`
-  provenance rejection.
+  cross-conversation isolation, terminal reporting, Agent disposal, same-ID replacement behind in-flight watched
+  and standalone readiness mutations, timer fencing, plugin cleanup, package metadata, peer ranges, global config,
+  and project-`.env` provenance rejection.
 - TypeScript checks compile against exact 0.1.5-rc.2 Agent/launch-environment/LLM/skill/tool declarations and
-  Cordis 4.0.2.
+  Cordis 4.0.2. The package declaration build emits only the reachable `core/`, `runtime/`, and `deepseek/` graph.
 - `npm run pack:check` packed, installed, imported, and type-checked the DeepSeek artifact in a disposable consumer.
   `npm run host:check:deepseek` installed Harness 0.1.5-rc.2 and pnpm into an isolated directory, added the packed
   artifact to an isolated Web profile, verified exactly one composed layer plus bundle/skill contents, booted the

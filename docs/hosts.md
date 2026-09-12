@@ -115,7 +115,7 @@ DeepSeek Harness support targets its long-lived Web profile. Every root Agent re
 registry. Reports use native `agent.steer(...)` delivery: an idle conversation starts a turn, while a busy one gets
 the report at its next step boundary. Exact Agent identity keeps other conversations and replacement Agents with a
 reused session ID from receiving those reports. A replacement's tool appears only after the prior runtime's
-in-flight startup/readiness mutation cleanup drains.
+in-flight startup or watched/standalone readiness mutation cleanup drains.
 
 Disposing the Agent, unloading the bundle, or stopping Harness cancels its monitors. They are not restored when a
 persisted conversation resumes in another process. Harness's bundled skill catalog is host-global, so a delegated

@@ -35,10 +35,10 @@ of its profile and import it directly with plain Node; that bypasses Harness's m
 Each root DeepSeek Agent receives its own tool and monitor registry. Reports use native `agent.steer(...)` delivery:
 an idle conversation starts a turn, while a busy conversation receives the report at its next step boundary. Exact
 Agent object identity prevents another open conversation—or a replacement reusing the same session ID—from receiving
-the report. A same-ID replacement receives its tool only after the prior runtime's in-flight startup/readiness
-mutation cleanup drains. DeepSeek's bundled skill catalog is host-global, so a delegated child may discover
-`monitor-pr` without receiving the root-only tool; the skill tells it to return the PR target and monitoring request
-to its parent/root.
+the report. A same-ID replacement receives its tool only after the prior runtime's in-flight startup or
+watched/standalone readiness mutation cleanup drains. DeepSeek's bundled skill catalog is host-global, so a
+delegated child may discover `monitor-pr` without receiving the root-only tool; the skill tells it to return the PR
+target and monitoring request to its parent/root.
 
 Disposing the conversation, unloading the bundle, or stopping Harness cancels its watches. Persisted conversations
 do not restore watches after a process restart; start missing monitors again after resuming.

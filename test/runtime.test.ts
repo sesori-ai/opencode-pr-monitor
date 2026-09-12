@@ -757,6 +757,45 @@ test("auto-merge startup fails closed when a pre-existing ready label cannot be 
   assert.equal(timers.timers.length, 0)
 })
 
+test("session cleanup waits for standalone readiness mutations", async () => {
+  let labelMutationStarted!: () => void
+  let releaseLabelMutation!: () => void
+  const mutationStarted = new Promise<void>((resolve) => {
+    labelMutationStarted = resolve
+  })
+  const mutationGate = new Promise<void>((resolve) => {
+    releaseLabelMutation = resolve
+  })
+  const runGh: GhRunner = async (args) => {
+    const route = args.find((arg) => arg.startsWith("repos/")) ?? ""
+    if (route === "repos/sesori/example/pulls/42") {
+      return JSON.stringify({ state: "open", merged: false })
+    }
+    if (route === "repos/sesori/example/labels") throw new Error("label already exists")
+    if (route === "repos/sesori/example/issues/42/labels") {
+      labelMutationStarted()
+      await mutationGate
+      return ""
+    }
+    throw new Error(`unexpected gh call: ${args.join(" ")}`)
+  }
+  const session = new MonitorSession({ runGh, loadConfig: async () => config(), log: () => {} })
+  const markReady = session.execute({ action: MonitorAction.markReady, pr: "sesori/example#42" })
+  await mutationStarted
+
+  let cleanupFinished = false
+  const cleanup = session.stopAll({}).then(() => {
+    cleanupFinished = true
+  })
+  await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate))
+  assert.equal(cleanupFinished, false)
+
+  releaseLabelMutation()
+  assert.match((await markReady).text, /label "ready-for-human-review" added/)
+  await cleanup
+  assert.equal(cleanupFinished, true)
+})
+
 test("standalone mark_ready auto-merges the captured head", async () => {
   const calls: string[][] = []
   const runGh: GhRunner = async (args) => {
